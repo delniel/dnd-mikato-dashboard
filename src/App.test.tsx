@@ -217,6 +217,20 @@ describe('игровые представления листа', () => {
     await waitFor(() => expect(saveLibrary).toHaveBeenCalledWith(expect.objectContaining({ characters: expect.any(Object) })))
   })
 
+  it('подставляет название связанной записи только в пустое название эффекта', async () => {
+    render(<App />)
+    navigate('Бой')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить эффект' }))
+    const name = screen.getByLabelText('Название')
+    const source = screen.getByLabelText('Связь с записью листа')
+    const [first, second] = useCharacterStore.getState().spells
+    fireEvent.change(source, { target: { value: `spell:${first.id}` } })
+    expect(name).toHaveValue(first.name)
+    fireEvent.change(name, { target: { value: 'Моё название' } })
+    fireEvent.change(source, { target: { value: `spell:${second.id}` } })
+    expect(name).toHaveValue('Моё название')
+  })
+
   it('восстанавливает сохранённые эффекты при загрузке страницы', async () => {
     const saved = createInitialCharacter()
     saved.combatEffects = [{ id: 'persisted', name: 'Сохранённый эффект', category: 'special', source: '', description: 'После перезагрузки', active: true, concentration: false, createdAt: '2026-07-22T12:00:00.000Z', duration: { type: 'manual' }, modifiers: [] }]

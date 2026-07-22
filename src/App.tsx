@@ -668,9 +668,9 @@ function CombatEffectEditor({ effect, calculations, onClose }: { effect: CombatE
   const [draft, setDraft] = useState<CombatEffect>(effect)
   const [error, setError] = useState('')
   const sourceOptions = [
-    ...state.spells.map((spell) => ({ id: `spell:${spell.id}`, label: `Заклинание: ${spell.name}` })),
-    ...state.skills.map((skill) => ({ id: `skill:${skill.id}`, label: `Навык: ${skill.name}` })),
-    ...state.inventory.map((item) => ({ id: `item:${item.id}`, label: `Предмет: ${item.name}` })),
+    ...state.spells.map((spell) => ({ id: `spell:${spell.id}`, name: spell.name, label: `Заклинание: ${spell.name}` })),
+    ...state.skills.map((skill) => ({ id: `skill:${skill.id}`, name: skill.name, label: `Навык: ${skill.name}` })),
+    ...state.inventory.map((item) => ({ id: `item:${item.id}`, name: item.name, label: `Предмет: ${item.name}` })),
   ]
   const updateModifier = (id: string, patch: Partial<CombatModifier>) => setDraft({ ...draft, modifiers: draft.modifiers.map((modifier) => modifier.id === id ? { ...modifier, ...patch } : modifier) })
   const addModifier = () => {
@@ -692,7 +692,7 @@ function CombatEffectEditor({ effect, calculations, onClose }: { effect: CombatE
       <EditorField label="Название" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
       <label className="editor-field"><span>Категория</span><select aria-label="Категория эффекта" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as CombatCategory })}>{combatCategories.map((category) => <option key={category} value={category}>{combatCategoryLabels[category]}</option>)}</select></label>
       <EditorField label="Источник" value={draft.source} onChange={(source) => setDraft({ ...draft, source })} />
-      <label className="editor-field"><span>Связать с записью листа</span><select aria-label="Связь с записью листа" value={draft.sourceId ?? ''} onChange={(event) => setDraft({ ...draft, ...(event.target.value ? { sourceId: event.target.value } : { sourceId: undefined }) })}><option value="">Без связи</option>{sourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+      <label className="editor-field"><span>Связать с записью листа</span><select aria-label="Связь с записью листа" value={draft.sourceId ?? ''} onChange={(event) => { const sourceId = event.target.value; const sourceName = sourceOptions.find((option) => option.id === sourceId)?.name; setDraft({ ...draft, ...(sourceId ? { sourceId } : { sourceId: undefined }), ...(!draft.name.trim() && sourceName ? { name: sourceName } : {}) }) }}><option value="">Без связи</option>{sourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
       <div className="effect-description-field"><EditorField label="Описание" value={draft.description} type="textarea" onChange={(description) => setDraft({ ...draft, description })} /></div>
       <label className="editor-field"><span>Длительность</span><select aria-label="Длительность эффекта" value={draft.duration.type} onChange={(event) => { const type = event.target.value as CombatEffect['duration']['type']; setDraft({ ...draft, duration: type === 'rounds' ? { type, roundsRemaining: draft.duration.roundsRemaining ?? 1 } : { type }, concentration: type === 'concentration' || draft.concentration }) }}>{combatDurationTypes.map((duration) => <option key={duration} value={duration}>{combatDurationLabels[duration]}</option>)}</select></label>
       {draft.duration.type === 'rounds' && <label className="editor-field"><span>Осталось раундов</span><input aria-label="Осталось раундов" type="number" min="0" value={draft.duration.roundsRemaining ?? 0} onChange={(event) => setDraft({ ...draft, duration: { type: 'rounds', roundsRemaining: Number(event.target.value) } })} /></label>}
