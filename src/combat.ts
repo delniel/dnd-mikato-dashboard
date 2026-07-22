@@ -167,9 +167,9 @@ export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'char
 const effectOrder = (left: CombatEffect, right: CombatEffect) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
 const categoryOrder: CombatCategory[] = ['positive', 'negative', 'special']
 const operationOrderByCategory: Record<CombatCategory, CombatOperation[]> = {
-  positive: ['ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY'],
-  negative: ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE'],
-  special: ['ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY'],
+  positive: ['SET', 'ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY'],
+  negative: ['SET', 'ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE'],
+  special: ['SET', 'ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY'],
 }
 
 export function calculateCombatTarget(target: CombatTarget, effects: CombatEffect[], equipmentValue = 0): CombatCalculation {
@@ -184,7 +184,8 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
     for (const operation of operationOrderByCategory[category]) {
       for (const { effect, modifier } of modifiers.filter((entry) => entry.effect.category === category && entry.modifier.operation === operation)) {
         const before = current
-        current = operation === 'ADD' ? current + modifier.value
+        current = operation === 'SET' ? modifier.value
+          : operation === 'ADD' ? current + modifier.value
           : operation === 'SUBTRACT' ? current - modifier.value
             : operation === 'MULTIPLY' ? current * modifier.value
               : current / modifier.value
@@ -194,14 +195,6 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
   }
 
   const setters = modifiers.filter(({ modifier }) => modifier.operation === 'SET')
-  const chosenSet = setters.at(-1)
-  for (const entry of setters) {
-    const { effect, modifier } = entry
-    const applied = entry === chosenSet
-    const before = current
-    if (applied) current = modifier.value
-    steps.push({ effectId: effect.id, effectName: effect.name, operation: 'SET', value: modifier.value, before, after: current, applied })
-  }
 
   if (target.nonNegative) current = Math.max(0, current)
   return {

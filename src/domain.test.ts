@@ -12,10 +12,10 @@ describe('автоматические модификаторы навыков',
   })
 
   it('добавляет бонус владения ноль, один или два раза', () => {
-    expect(calculateSkillBonus('20', '+3', 0)).toBe(5)
-    expect(calculateSkillBonus('20', '+3', 1)).toBe(8)
-    expect(calculateSkillBonus('20', '+3', 2)).toBe(11)
-    expect(calculateSkillBonus('20', '+4', 2)).toBe(13)
+    expect(calculateSkillBonus('+3', 0)).toBe(0)
+    expect(calculateSkillBonus('+3', 1)).toBe(3)
+    expect(calculateSkillBonus('+3', 2)).toBe(6)
+    expect(calculateSkillBonus('+4', 2)).toBe(8)
   })
 
   it('циклически переключает владение 0 → 1 → 2 → 0', () => {

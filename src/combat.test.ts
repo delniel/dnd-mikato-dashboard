@@ -44,13 +44,14 @@ describe('чистый расчёт боевых параметров', () => {
     expect(calculateCombatTarget(speed, [haste, bonds]).finalValue).toBe(20)
   })
 
-  it('полностью применяет положительные эффекты до отрицательных в разном порядке деления и умножения', () => {
+  it('применяет все категории в заданном порядке операций', () => {
     const target: CombatTarget = { id: 'profile.test', label: 'Тест', group: 'combat', baseValue: 100 }
     const positive = effect({
       id: 'positive',
       name: 'Положительный комплекс',
       category: 'positive',
       modifiers: [
+        { id: 'p-set', target: target.id, operation: 'SET', value: 120 },
         { id: 'p-add', target: target.id, operation: 'ADD', value: 20 },
         { id: 'p-subtract', target: target.id, operation: 'SUBTRACT', value: 10 },
         { id: 'p-divide', target: target.id, operation: 'DIVIDE', value: 2 },
@@ -63,18 +64,33 @@ describe('чистый расчёт боевых параметров', () => {
       category: 'negative',
       createdAt: '2026-07-22T11:00:00.000Z',
       modifiers: [
+        { id: 'n-set', target: target.id, operation: 'SET', value: 200 },
         { id: 'n-add', target: target.id, operation: 'ADD', value: 5 },
         { id: 'n-subtract', target: target.id, operation: 'SUBTRACT', value: 15 },
         { id: 'n-multiply', target: target.id, operation: 'MULTIPLY', value: 2 },
         { id: 'n-divide', target: target.id, operation: 'DIVIDE', value: 5 },
       ],
     })
-    const result = calculateCombatTarget(target, [negative, positive])
-    expect(result.finalValue).toBe(62)
-    expect(result.steps.map((step) => step.operation)).toEqual(['ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY', 'ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE'])
+    const special = effect({
+      id: 'special',
+      name: 'Особый комплекс',
+      category: 'special',
+      createdAt: '2026-07-22T12:00:00.000Z',
+      modifiers: [
+        { id: 's-set', target: target.id, operation: 'SET', value: 80 },
+        { id: 's-add', target: target.id, operation: 'ADD', value: 4 },
+        { id: 's-subtract', target: target.id, operation: 'SUBTRACT', value: 4 },
+        { id: 's-divide', target: target.id, operation: 'DIVIDE', value: 2 },
+        { id: 's-multiply', target: target.id, operation: 'MULTIPLY', value: 3 },
+      ],
+    })
+    const result = calculateCombatTarget(target, [special, negative, positive])
+    expect(result.finalValue).toBe(120)
+    expect(result.steps.map((step) => step.operation)).toEqual(['SET', 'ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY', 'SET', 'ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'SET', 'ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY'])
     expect(result.steps.map((step) => step.effectName)).toEqual([
-      'Положительный комплекс', 'Положительный комплекс', 'Положительный комплекс', 'Положительный комплекс',
-      'Отрицательный комплекс', 'Отрицательный комплекс', 'Отрицательный комплекс', 'Отрицательный комплекс',
+      ...Array(5).fill('Положительный комплекс'),
+      ...Array(5).fill('Отрицательный комплекс'),
+      ...Array(5).fill('Особый комплекс'),
     ])
   })
 
