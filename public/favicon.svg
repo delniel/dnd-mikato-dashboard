@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DnD MGE">
+  <rect width="64" height="64" rx="14" fill="#15161a"/>
+  <path d="M32 7 53 20l-5 28-16 9-16-9-5-28Z" fill="#a72f37" stroke="#ef7778" stroke-width="2"/>
+  <path d="m32 7 9 22-9 28-9-28Zm-21 13 12 9-7 19m37-28-12 9 7 19M23 29h18" fill="none" stroke="#f8ece7" stroke-opacity=".72" stroke-width="1.5"/>
+  <text x="32" y="37" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" font-family="Georgia,serif">MGE</text>
+</svg>

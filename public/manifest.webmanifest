@@ -1,0 +1,13 @@
+{
+  "name": "DnD Mikato Edition — лист персонажа",
+  "short_name": "DnD MGE",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#08090c",
+  "theme_color": "#15161a",
+  "lang": "ru",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

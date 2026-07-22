@@ -1,0 +1,77 @@
+import type { CharacterState, Characteristic } from './domain'
+
+const characteristicSkills: Record<string, string[]> = {
+  Сила: ['Атлетика'],
+  Ловкость: ['Акробатика', 'Ловкость рук', 'Скрытность'],
+  Телосложение: [],
+  Интеллект: ['Анализ', 'История', 'Магия', 'Природа', 'Религия'],
+  Мудрость: ['Восприятие', 'Выживание', 'Медицина', 'Проницательность', 'Уход за животными'],
+  Харизма: ['Выступление', 'Запугивание', 'Обман', 'Убеждение'],
+}
+
+const createCharacteristics = (): Characteristic[] => Object.entries(characteristicSkills).map(([name, skills]) => ({
+  id: name,
+  name,
+  score: '',
+  check: '',
+  save: '',
+  skills: skills.map((skill) => ({ id: `${name}-${skill}`, name: skill, bonus: '' })),
+}))
+
+export function createInitialCharacter(): CharacterState {
+  return {
+    schemaVersion: 4,
+    profile: {
+      playerName: '',
+      name: '',
+      classBackground: '',
+      proficiency: '',
+      armorClass: '',
+      spellCapacity: '',
+      hitDie: '',
+      superiorityDie: '',
+      speed: '',
+      manaRecovery: '',
+      mainCharacteristic: '',
+      race: '',
+      raceSubtype: '',
+      alignment: '',
+      profession: '',
+      masteryMagic: '',
+      age: '',
+      height: '',
+      weight: '',
+      eyes: '',
+      hair: '',
+      skin: '',
+      traits: '',
+      ideals: '',
+      bonds: '',
+      weaknesses: '',
+      backstory: '',
+      avatarId: '',
+    },
+    resources: {
+      hp: { current: 0, max: 0, temporary: 0 },
+      mana: { current: 0, max: 0 },
+      superiority: { current: 0, max: 0, dieType: '' },
+    },
+    experience: 0,
+    level: 0,
+    inspiration: false,
+    senses: { Восприятие: '', Проницательность: '', Анализ: '' },
+    favorites: [],
+    notes: [],
+    settings: { levelUpBehavior: 'carry', allowNegativeMana: false, themeMode: 'dark', accentColor: 'red' },
+    characteristics: createCharacteristics(),
+    languages: [],
+    proficiencies: [],
+    elements: [],
+    spells: [],
+    skills: [],
+    inventory: [],
+    currencies: { PP: 0, GP: 0, SP: 0, CP: 0 },
+    diceHistory: [],
+    extras: {},
+  }
+}
