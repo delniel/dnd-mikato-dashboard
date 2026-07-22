@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateCombatTarget, combatModifierSchema, migrateCombatEffects, type CombatEffect, type CombatTarget } from './combat'
+import { calculateCombatTarget, combatModifierSchema, formatSignedCombatNumber, migrateCombatEffects, parseCombatNumber, type CombatEffect, type CombatTarget } from './combat'
 
 const armorClass: CombatTarget = { id: 'profile.armorClass', label: 'Класс доспеха', group: 'combat', baseValue: 17 }
 const speed: CombatTarget = { id: 'profile.speed', label: 'Скорость', group: 'combat', baseValue: 30, nonNegative: true }
@@ -19,6 +19,14 @@ const effect = (patch: Partial<CombatEffect> = {}): CombatEffect => ({
 })
 
 describe('чистый расчёт боевых параметров', () => {
+  it('читает типографские знаки и отображает явный знак положительных бонусов', () => {
+    expect(parseCombatNumber('−4')).toBe(-4)
+    expect(parseCombatNumber('+13')).toBe(13)
+    expect(formatSignedCombatNumber(-4)).toBe('-4')
+    expect(formatSignedCombatNumber(0)).toBe('0')
+    expect(formatSignedCombatNumber(13)).toBe('+13')
+  })
+
   it('добавляет +4 к КД 17, не изменяя базовое значение', () => {
     const result = calculateCombatTarget(armorClass, [effect()])
     expect(result.finalValue).toBe(21)

@@ -131,7 +131,7 @@ export function migrateCombatEffects(value: unknown): CombatEffect[] {
 
 export function parseCombatNumber(value: string | undefined): number | null {
   if (!value) return null
-  const normalized = value.trim().replace(',', '.')
+  const normalized = value.trim().replace(/[−–—﹣]/g, '-').replace(/[＋﹢]/g, '+').replace(',', '.')
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) return null
   const parsed = Number(normalized)
   return Number.isFinite(parsed) ? parsed : null
@@ -155,7 +155,7 @@ export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'char
     if (baseValue !== null) targets.push({ id: `profile.${definition.key}`, label: definition.label, group: 'combat', baseValue, unit: definition.unit, nonNegative: definition.nonNegative })
   }
   for (const characteristic of state.characteristics) {
-    const fields: Array<['score' | 'check' | 'save', string]> = [['score', 'Значение'], ['check', 'Модификатор'], ['save', 'Спасбросок']]
+    const fields: Array<['score' | 'check' | 'save', string]> = [['score', 'Значение'], ['check', 'Проверка'], ['save', 'Спасбросок']]
     for (const [field, label] of fields) {
       const baseValue = parseCombatNumber(characteristic[field])
       if (baseValue !== null) targets.push({ id: `characteristic.${characteristic.id}.${field}`, label: `${characteristic.name}: ${label}`, group: 'ability', baseValue })
@@ -222,6 +222,10 @@ export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'ch
 
 export function formatCombatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : Number(value.toFixed(2)).toString()
+}
+
+export function formatSignedCombatNumber(value: number): string {
+  return `${value > 0 ? '+' : ''}${formatCombatNumber(value)}`
 }
 
 export const combatCategoryLabels: Record<CombatCategory, string> = {

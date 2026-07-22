@@ -4,7 +4,7 @@ import { createJsonBackup, createLibraryBackup, materializeImportedCharacter, pa
 import { cloneImage, loadImage, loadImages, loadLibrary, removeImages, saveImage, saveImages, saveLibrary, type ImageRecord } from './db'
 import { createBlankCharacter } from './data'
 import { manaRecoveryAmount, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
-import { calculateCombatState, combatCategories, combatCategoryLabels, combatDurationLabels, combatDurationTypes, combatOperationLabels, combatOperationSymbols, combatOperations, describeCombatDuration, formatCombatNumber, type CombatCalculation, type CombatCategory, type CombatEffect, type CombatModifier, type CombatOperation } from './combat'
+import { calculateCombatState, combatCategories, combatCategoryLabels, combatDurationLabels, combatDurationTypes, combatOperationLabels, combatOperationSymbols, combatOperations, describeCombatDuration, formatCombatNumber, formatSignedCombatNumber, type CombatCalculation, type CombatCategory, type CombatEffect, type CombatModifier, type CombatOperation } from './combat'
 import { addCharacter, applyLibrarySettings, characterForActivation, collectCharacterImageIds, createCharacterLibrary, createCharacterRecord, deleteCharacter, getActiveCharacter, renameCharacter, sanitizeFilename, selectCharacter as selectLibraryCharacter, syncActiveCharacter, type CharacterLibrary, type CharacterRecord } from './library'
 import { librarySnapshot, useLibraryStore } from './libraryStore'
 import { useCharacterStore } from './store'
@@ -612,7 +612,7 @@ function CombatStatCard({ calculation, onOpen }: { calculation: CombatCalculatio
 function AbilityCombatCard({ name, calculations, onOpen }: { name: string; calculations: Partial<Record<'score' | 'check' | 'save', CombatCalculation>>; onOpen: (calculation: CombatCalculation) => void }) {
   const values: Array<{ key: 'score' | 'check' | 'save'; label: string }> = [
     { key: 'score', label: 'Значение' },
-    { key: 'check', label: 'Модификатор' },
+    { key: 'check', label: 'Проверка' },
     { key: 'save', label: 'Спасбросок' },
   ]
   const changed = values.some(({ key }) => {
@@ -627,7 +627,8 @@ function AbilityCombatCard({ name, calculations, onOpen }: { name: string; calcu
         if (!calculation) return <div className="ability-combat-value unavailable" key={key}><span>{label}</span><strong>—</strong><small>Не указано</small></div>
         const valueChanged = calculation.finalValue !== calculation.baseValue + calculation.equipmentValue
         const effectValue = `${calculation.effectDelta >= 0 ? '+' : ''}${formatCombatNumber(calculation.effectDelta)}`
-        return <button type="button" className={valueChanged ? 'ability-combat-value changed' : 'ability-combat-value'} key={key} aria-label={`Расчёт: ${calculation.target.label}`} onClick={() => onOpen(calculation)}><span>{label}</span><strong>{formatCombatNumber(calculation.finalValue)}</strong><small>База {formatCombatNumber(calculation.baseValue)} · эффекты {effectValue}</small></button>
+        const formatValue = key === 'score' ? formatCombatNumber : formatSignedCombatNumber
+        return <button type="button" className={valueChanged ? 'ability-combat-value changed' : 'ability-combat-value'} key={key} aria-label={`Расчёт: ${calculation.target.label}`} onClick={() => onOpen(calculation)}><span>{label}</span><strong>{formatValue(calculation.finalValue)}</strong><small>База {formatValue(calculation.baseValue)} · эффекты {effectValue}</small></button>
       })}
     </div>
   </article>
@@ -635,8 +636,9 @@ function AbilityCombatCard({ name, calculations, onOpen }: { name: string; calcu
 
 function CombatCalculationDetail({ calculation, onClose }: { calculation: CombatCalculation; onClose: () => void }) {
   const unit = calculation.target.unit ?? ''
+  const formatValue = /\.(check|save)$/.test(calculation.target.id) ? formatSignedCombatNumber : formatCombatNumber
   return <Modal title={`Расчёт: ${calculation.target.label}`} onClose={onClose}>
-    <div className="calculation-summary"><span>База</span><strong>{formatCombatNumber(calculation.baseValue)}{unit}</strong>{calculation.equipmentValue !== 0 && <><span>Экипировка</span><strong>{formatCombatNumber(calculation.equipmentValue)}{unit}</strong></>}<span>Итог</span><strong>{formatCombatNumber(calculation.finalValue)}{unit}</strong></div>
+    <div className="calculation-summary"><span>База</span><strong>{formatValue(calculation.baseValue)}{unit}</strong>{calculation.equipmentValue !== 0 && <><span>Экипировка</span><strong>{formatCombatNumber(calculation.equipmentValue)}{unit}</strong></>}<span>Итог</span><strong>{formatValue(calculation.finalValue)}{unit}</strong></div>
     <p className="quiet calculation-order-hint">Порядок: положительные эффекты (+/−, ÷, ×), затем отрицательные (+/−, ×, ÷). Операция «=» применяется последней.</p>
     {calculation.setConflict && <p className="calculation-warning" role="alert">Несколько активных эффектов устанавливают значение через «=». Применён последний созданный эффект.</p>}
     {calculation.steps.length ? <ol className="calculation-steps">{calculation.steps.map((step, index) => <li key={`${step.effectId}-${index}`} className={step.applied ? '' : 'ignored'}><strong>{step.effectName}</strong><span>{combatOperationSymbols[step.operation]} {formatCombatNumber(step.value)}</span><span>{step.applied ? `${formatCombatNumber(step.before)} → ${formatCombatNumber(step.after)}` : 'Не применён: более новый SET'}</span></li>)}</ol> : <p className="quiet">Активных числовых изменений для этого параметра нет.</p>}

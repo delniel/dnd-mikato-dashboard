@@ -178,12 +178,13 @@ describe('игровые представления листа', () => {
     expect(await screen.findByText('70 / 81')).toBeInTheDocument()
   })
 
-  it('объединяет значение, модификатор и спасбросок характеристики в одну карточку', async () => {
+  it('объединяет значение, проверку и спасбросок характеристики в одну карточку', async () => {
     render(<App />)
     navigate('Бой')
     const strength = await screen.findByLabelText('Сила: боевые значения')
     expect(within(strength).getByText('Значение')).toBeInTheDocument()
-    expect(within(strength).getByText('Модификатор')).toBeInTheDocument()
+    expect(within(strength).getByText('Проверка')).toBeInTheDocument()
+    expect(within(strength).getByRole('button', { name: 'Расчёт: Сила: Проверка' })).toHaveTextContent('-4')
     expect(within(strength).getByText('Спасбросок')).toBeInTheDocument()
     expect(screen.getAllByLabelText(/боевые значения$/)).toHaveLength(6)
   })
