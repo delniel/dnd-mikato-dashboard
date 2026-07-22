@@ -1,10 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { changeResource, convertCurrency, deductMana, levelUp, manaRecoveryAmount, migrateCharacter, restoreCharacter, restoreMana, rollDice, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, thresholdForLevel, undoResource } from './domain'
+import { calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, restoreCharacter, restoreMana, rollDice, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
+
+describe('автоматические модификаторы навыков', () => {
+  it('рассчитывает модификатор характеристики по таблице от 0 до 30', () => {
+    expect([[0, -5], [1, -5], [2, -4], [9, -1], [10, 0], [11, 0], [20, 5], [29, 9], [30, 10]].map(([score]) => characteristicModifier(score))).toEqual([-5, -5, -4, -1, 0, 0, 5, 9, 10])
+  })
+
+  it('добавляет бонус владения ноль, один или два раза', () => {
+    expect(calculateSkillBonus('20', '+3', 0)).toBe(5)
+    expect(calculateSkillBonus('20', '+3', 1)).toBe(8)
+    expect(calculateSkillBonus('20', '+3', 2)).toBe(11)
+    expect(calculateSkillBonus('20', '+4', 2)).toBe(13)
+  })
+
+  it('циклически переключает владение 0 → 1 → 2 → 0', () => {
+    expect(nextSkillProficiencyRank(0)).toBe(1)
+    expect(nextSkillProficiencyRank(1)).toBe(2)
+    expect(nextSkillProficiencyRank(2)).toBe(0)
+  })
+
+  it('мигрирует старые добавочные бонусы в ранг владения', () => {
+    const migrated = migrateCharacter({ profile: { proficiency: '+3' }, characteristics: [{ id: 'wisdom', name: 'Мудрость', score: '20', check: '+5', save: '+5', skills: [{ id: 'survival', name: 'Выживание', bonus: '+3' }, { id: 'perception', name: 'Восприятие', bonus: '+6' }] }] })
+    expect(migrated.characteristics[0].skills.map((skill) => skill.proficiencyRank)).toEqual([1, 2])
+    expect(migrated.characteristics[0].skills.map((skill) => skill.bonus)).toEqual(['', ''])
+  })
+})
 
 describe('ресурсы и уровень', () => {
   it('меняет HP и ману только на переданный один шаг', () => {
@@ -168,7 +193,7 @@ describe('кубики и миграция', () => {
       settings: { levelUpBehavior: 'carry', allowNegativeMana: false },
     }
     const migrated = migrateCharacter(old)
-    expect(migrated.schemaVersion).toBe(5)
+    expect(migrated.schemaVersion).toBe(6)
     expect(migrated.profile.avatarId).toBe('avatar-1')
     expect(migrated.profile.masteryMagic).toBe('Мастерство и Магия')
     expect(migrated.resources.hp.current).toBe(40)
@@ -231,7 +256,7 @@ describe('кубики и миграция', () => {
     expect(restored.spells.length).toBeGreaterThan(0)
     expect(restored.notes).toEqual([])
     expect(restored.combatEffects).toEqual([])
-    expect(restoreCharacter(serializeCharacter(base())).schemaVersion).toBe(5)
+    expect(restoreCharacter(serializeCharacter(base())).schemaVersion).toBe(6)
   })
 
   it('сохраняет боевые эффекты при экспорте и импорте', () => {

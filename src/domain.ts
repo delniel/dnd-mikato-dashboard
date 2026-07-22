@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { createInitialCharacter } from './data'
 import { combatEffectSchema, migrateCombatEffects, type CombatEffect } from './combat'
 
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 export const experienceThresholds = [20, 45, 75, 110, 150, 195, 245, 300, 360, 425, 495, 570, 650, 735, 825, 920, 1020, 1125, 1235, 1350, 1470, 1595, 1725, 1860, 2000]
 
 export type ResourceKey = 'hp' | 'mana' | 'superiority'
@@ -10,7 +10,8 @@ export type Resource = { current: number; max: number; temporary?: number; dieTy
 export type ThemeMode = 'dark' | 'light'
 export type AccentColor = 'red' | 'blue' | 'cyan' | 'green' | 'purple' | 'pink' | 'yellow'
 export type NamedEntry = { id: string; name: string; imageId?: string }
-export type CharacterSkill = { id: string; name: string; bonus: string }
+export type SkillProficiencyRank = 0 | 1 | 2
+export type CharacterSkill = { id: string; name: string; bonus: string; proficiencyRank: SkillProficiencyRank }
 export type Characteristic = { id: string; name: string; score: string; check: string; save: string; skills: CharacterSkill[] }
 export type Spell = { id: string; name: string; imageId?: string; elements: string[]; characteristic: string; components: string; castingTime: string; target?: string; range: string; duration: string; manaCost: number | null; damageOrHealing: string; damage?: string; healing?: string; difficulty: string; level: string; summary: string; description: string; effects: string; restrictions: string; tags: string[]; requiresConcentration: boolean; actionType: string }
 export type Skill = { id: string; name: string; imageId?: string; difficulty: string; actionType: string; summary: string; mechanics: string; condition: string; requirement: string; status: 'active' | 'passive' | 'reaction'; tags: string[] }
@@ -47,7 +48,7 @@ export type CharacterState = {
 const resourceSchema = z.object({ current: z.number(), max: z.number(), temporary: z.number().optional() })
 const superiorityResourceSchema = resourceSchema.extend({ dieType: z.string() })
 const entrySchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional() })
-const skillBonusSchema = z.object({ id: z.string(), name: z.string(), bonus: z.string() })
+const skillBonusSchema = z.object({ id: z.string(), name: z.string(), bonus: z.string(), proficiencyRank: z.union([z.literal(0), z.literal(1), z.literal(2)]) })
 const characteristicSchema = z.object({ id: z.string(), name: z.string(), score: z.string(), check: z.string(), save: z.string(), skills: z.array(skillBonusSchema) })
 const spellSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), elements: z.array(z.string()), characteristic: z.string(), components: z.string(), castingTime: z.string(), target: z.string().optional(), range: z.string(), duration: z.string(), manaCost: z.number().nullable(), damageOrHealing: z.string(), damage: z.string().optional(), healing: z.string().optional(), difficulty: z.string(), level: z.string(), summary: z.string(), description: z.string(), effects: z.string(), restrictions: z.string(), tags: z.array(z.string()), requiresConcentration: z.boolean(), actionType: z.string() })
 const skillSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), difficulty: z.string(), actionType: z.string(), summary: z.string(), mechanics: z.string(), condition: z.string(), requirement: z.string(), status: z.enum(['active', 'passive', 'reaction']), tags: z.array(z.string()) })
@@ -81,6 +82,32 @@ export const characterSchema = z.object({
 
 export function thresholdForLevel(level: number): number | undefined {
   return level >= 0 && level < 25 ? experienceThresholds[level] : undefined
+}
+
+const parseRuleNumber = (value: string | number | undefined): number | null => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (!value) return null
+  const normalized = value.trim().replace(/[−–—﹣]/g, '-').replace(/[＋﹢]/g, '+').replace(',', '.')
+  if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) return null
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function characteristicModifier(score: string | number | undefined): number | null {
+  const parsed = parseRuleNumber(score)
+  if (parsed === null) return null
+  const bounded = Math.min(30, Math.max(0, Math.trunc(parsed)))
+  return Math.floor((bounded - 10) / 2)
+}
+
+export function calculateSkillBonus(score: string | number | undefined, proficiency: string | number | undefined, rank: SkillProficiencyRank): number | null {
+  const modifier = characteristicModifier(score)
+  if (modifier === null) return null
+  return modifier + (parseRuleNumber(proficiency) ?? 0) * rank
+}
+
+export function nextSkillProficiencyRank(rank: SkillProficiencyRank): SkillProficiencyRank {
+  return rank === 0 ? 1 : rank === 1 ? 2 : 0
 }
 
 export function levelUp(state: CharacterState): CharacterState {
@@ -247,7 +274,7 @@ const migrateNotes = (value: unknown): Note[] => {
   })
 }
 
-const migrateCharacteristics = (value: unknown, fallback: Characteristic[]): Characteristic[] => {
+const migrateCharacteristics = (value: unknown, fallback: Characteristic[], proficiency: string): Characteristic[] => {
   if (!Array.isArray(value)) return fallback
 
   return value.filter(isRecord).map((rawCharacteristic) => {
@@ -262,10 +289,17 @@ const migrateCharacteristics = (value: unknown, fallback: Characteristic[]): Cha
         return entry.name === rawName || entry.name.startsWith(`${rawName} `)
       })
       const hasBrokenContinuation = defaultSkill && defaultSkill.name !== rawName && defaultSkill.name.startsWith(`${rawName} `) && rawBonus === defaultSkill.name.slice(rawName.length + 1).split(' ')[0]
+      const bonus = hasBrokenContinuation ? defaultSkill.bonus : rawBonus
+      const explicitRank = rawSkill.proficiencyRank
+      const hasExplicitRank = explicitRank === 0 || explicitRank === 1 || explicitRank === 2
+      const parsedBonus = parseRuleNumber(bonus) ?? 0
+      const parsedProficiency = Math.abs(parseRuleNumber(proficiency) ?? 0)
+      const inferredRank = parsedProficiency > 0 ? Math.min(2, Math.max(0, Math.round(Math.abs(parsedBonus) / parsedProficiency))) as SkillProficiencyRank : 0
       return {
         id: asString(rawSkill.id, newId()),
         name: hasBrokenContinuation ? defaultSkill.name : rawName,
-        bonus: hasBrokenContinuation ? defaultSkill.bonus : rawBonus,
+        bonus: hasExplicitRank ? rawBonus : '',
+        proficiencyRank: explicitRank === 1 || explicitRank === 2 ? explicitRank : explicitRank === 0 ? 0 : inferredRank,
       }
     })
     return {
@@ -341,7 +375,7 @@ export function migrateCharacter(input: unknown): CharacterState {
           accentColor: ['red', 'blue', 'cyan', 'green', 'purple', 'pink', 'yellow'].includes(asString(input.settings.accentColor)) ? asString(input.settings.accentColor) as AccentColor : 'red',
         }
       : defaults.settings,
-    characteristics: migrateCharacteristics(input.characteristics, defaults.characteristics),
+    characteristics: migrateCharacteristics(input.characteristics, defaults.characteristics, profile.proficiency),
     languages: textEntries(input.languages, defaults.languages),
     proficiencies: textEntries(input.proficiencies, defaults.proficiencies),
     elements: textEntries(input.elements ?? oldProfile.elements, defaults.elements),

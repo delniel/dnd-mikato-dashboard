@@ -21,6 +21,7 @@ import {
   type Note,
   type ResourceKey,
   type Skill,
+  type SkillProficiencyRank,
   type Spell,
 } from './domain'
 
@@ -46,7 +47,8 @@ type Store = CharacterState & {
   toggleFavorite: (id: string) => void
   setSense: (name: string, value: string) => void
   setCharacteristic: (id: string, field: 'score' | 'check' | 'save', value: string) => void
-  setSkillBonus: (characteristicId: string, skillId: string, value: string) => void
+  cycleSkillProficiency: (characteristicId: string, skillId: string) => void
+  setSkillDisplayBonus: (characteristicId: string, skillId: string, value: string) => void
   setCurrency: (key: CurrencyKey, value: number) => void
   adjustCurrency: (key: CurrencyKey, delta: number) => void
   convertCurrency: (from: CurrencyKey, to: CurrencyKey) => boolean
@@ -113,7 +115,8 @@ export const useCharacterStore = create<Store>((set, get) => ({
 
   setSense: (name, value) => set((state) => ({ senses: { ...state.senses, [name]: value } })),
   setCharacteristic: (id, field, value) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === id ? { ...characteristic, [field]: value } : characteristic) })),
-  setSkillBonus: (characteristicId, skillId, bonus) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === characteristicId ? { ...characteristic, skills: characteristic.skills.map((skill) => skill.id === skillId ? { ...skill, bonus } : skill) } : characteristic) })),
+  cycleSkillProficiency: (characteristicId, skillId) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === characteristicId ? { ...characteristic, skills: characteristic.skills.map((skill) => skill.id === skillId ? { ...skill, proficiencyRank: ((skill.proficiencyRank + 1) % 3) as SkillProficiencyRank } : skill) } : characteristic) })),
+  setSkillDisplayBonus: (characteristicId, skillId, bonus) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === characteristicId ? { ...characteristic, skills: characteristic.skills.map((skill) => skill.id === skillId ? { ...skill, bonus } : skill) } : characteristic) })),
   setCurrency: (key, value) => set((state) => ({ currencies: { ...state.currencies, [key]: Math.max(0, Number.isFinite(value) ? value : state.currencies[key]) } })),
   adjustCurrency: (key, delta) => set((state) => ({ currencies: { ...state.currencies, [key]: Math.max(0, state.currencies[key] + delta) } })),
   convertCurrency: (from, to) => {
