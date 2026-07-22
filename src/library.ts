@@ -1,7 +1,7 @@
 import { createInitialCharacter } from './data'
 import { migrateCharacter, type CharacterState } from './domain'
 
-export const LIBRARY_SCHEMA_VERSION = 2
+export const LIBRARY_SCHEMA_VERSION = 3
 export type AppSettings = CharacterState['settings']
 export type CharacterRecord = { id: string; name: string; createdAt: string; updatedAt: string; data: CharacterState }
 export type CharacterLibrary = { schemaVersion: number; activeCharacterId: string | null; characterOrder: string[]; characters: Record<string, CharacterRecord>; settings: AppSettings }
@@ -10,6 +10,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const clone = <T,>(value: T): T => structuredClone(value)
 const newId = () => crypto.randomUUID()
 const now = () => new Date().toISOString()
+const accentColors = ['red', 'blue', 'cyan', 'green', 'purple', 'pink', 'yellow'] as const
+const isAccentColor = (value: unknown): value is AppSettings['accentColor'] => typeof value === 'string' && (accentColors as readonly string[]).includes(value)
 
 export function createCharacterRecord(data: CharacterState = createInitialCharacter(), options: { id?: string; name?: string; timestamp?: string } = {}): CharacterRecord {
   const id = options.id ?? newId()
@@ -27,18 +29,28 @@ export function createCharacterLibrary(data: CharacterState = createInitialChara
 
 const normalizeSettings = (value: unknown): AppSettings => migrateCharacter({ settings: value }).settings
 
+export function applyLibrarySettings(data: CharacterState, settings: AppSettings): CharacterState {
+  const copy = clone(data)
+  copy.settings = { ...clone(settings), accentColor: copy.settings.accentColor }
+  return copy
+}
+
 export function migrateCharacterLibrary(value: unknown): CharacterLibrary {
   if (isRecord(value) && isRecord(value.characters)) {
     const version = typeof value.schemaVersion === 'number' ? value.schemaVersion : 1
     if (version > LIBRARY_SCHEMA_VERSION) throw new Error('Резервная копия создана более новой версией приложения')
+    const settings = normalizeSettings(value.settings)
     const characters: Record<string, CharacterRecord> = {}
     for (const [mapId, raw] of Object.entries(value.characters)) {
       if (!isRecord(raw)) continue
       try {
         const id = typeof raw.id === 'string' && raw.id ? raw.id : mapId
-        const data = migrateCharacter(isRecord(raw.data) ? raw.data : raw)
+        const rawData = isRecord(raw.data) ? raw.data : raw
+        const data = migrateCharacter(rawData)
         const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : data.profile.name?.trim() || 'Без имени'
         data.profile = { ...data.profile, name }
+        const rawSettings = isRecord(rawData.settings) ? rawData.settings : undefined
+        data.settings = { ...clone(settings), accentColor: isAccentColor(rawSettings?.accentColor) ? rawSettings.accentColor : settings.accentColor }
         characters[id] = {
           id,
           name,
@@ -51,8 +63,6 @@ export function migrateCharacterLibrary(value: unknown): CharacterLibrary {
     const listed = Array.isArray(value.characterOrder) ? value.characterOrder.filter((id): id is string => typeof id === 'string' && Boolean(characters[id])) : []
     const characterOrder = [...new Set([...listed, ...Object.keys(characters)])]
     const requestedActive = typeof value.activeCharacterId === 'string' ? value.activeCharacterId : null
-    const settings = normalizeSettings(value.settings)
-    for (const character of Object.values(characters)) character.data.settings = clone(settings)
     return {
       schemaVersion: LIBRARY_SCHEMA_VERSION,
       activeCharacterId: requestedActive && characters[requestedActive] ? requestedActive : characterOrder[0] ?? null,
@@ -71,7 +81,7 @@ export function getActiveCharacter(library: CharacterLibrary): CharacterRecord |
 
 export function characterForActivation(library: CharacterLibrary, id: string): CharacterState | null {
   const character = library.characters[id]
-  return character ? { ...clone(character.data), settings: clone(library.settings) } : null
+  return character ? applyLibrarySettings(character.data, library.settings) : null
 }
 
 export function syncActiveCharacter(library: CharacterLibrary, data: CharacterState, timestamp = now()): CharacterLibrary {
@@ -80,9 +90,11 @@ export function syncActiveCharacter(library: CharacterLibrary, data: CharacterSt
   const copy = clone(data)
   const name = copy.profile.name?.trim() || library.characters[id].name
   copy.profile = { ...copy.profile, name }
+  const sharedSettings = { ...copy.settings, accentColor: library.settings.accentColor }
+  copy.settings = { ...sharedSettings, accentColor: copy.settings.accentColor }
   return {
     ...library,
-    settings: clone(copy.settings),
+    settings: sharedSettings,
     characters: { ...library.characters, [id]: { ...library.characters[id], name, updatedAt: timestamp, data: copy } },
   }
 }
@@ -93,7 +105,7 @@ export function selectCharacter(library: CharacterLibrary, id: string): Characte
 
 export function addCharacter(library: CharacterLibrary, character: CharacterRecord): CharacterLibrary {
   const id = library.characters[character.id] ? newId() : character.id
-  const copy = clone({ ...character, id, data: { ...character.data, settings: library.settings } })
+  const copy = clone({ ...character, id, data: applyLibrarySettings(character.data, library.settings) })
   return { ...library, activeCharacterId: id, characterOrder: [...library.characterOrder, id], characters: { ...library.characters, [id]: copy } }
 }
 

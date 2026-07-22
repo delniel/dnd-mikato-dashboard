@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import { normalizeLibrary } from './db'
-import { addCharacter, createCharacterLibrary, createCharacterRecord, deleteCharacter, duplicateCharacter, migrateCharacterLibrary, renameCharacter, syncActiveCharacter } from './library'
+import { addCharacter, characterForActivation, createCharacterLibrary, createCharacterRecord, deleteCharacter, duplicateCharacter, migrateCharacterLibrary, renameCharacter, syncActiveCharacter } from './library'
 
 describe('библиотека персонажей', () => {
   it('мигрирует старый одиночный снимок ровно один раз со всеми данными', () => {
@@ -24,6 +24,22 @@ describe('библиотека персонажей', () => {
     expect(synced.characters.b.data.resources.hp.current).not.toBe(1)
     expect(synced.characters.b.data.spells[0].name).not.toBe('Изменено')
     expect(synced.characters.b.data.inventory[0].quantity).not.toBe('99')
+  })
+
+  it('сохраняет акцентный цвет отдельно у каждого персонажа, оставляя тему общей', () => {
+    const first = createInitialCharacter()
+    first.settings.accentColor = 'red'
+    let library = createCharacterLibrary(first, { id: 'a' })
+    const second = createInitialCharacter()
+    second.settings.accentColor = 'blue'
+    library = addCharacter(library, createCharacterRecord(second, { id: 'b' }))
+    const changed = structuredClone(library.characters.a.data)
+    changed.settings = { ...changed.settings, accentColor: 'green', themeMode: 'light' }
+    const synced = syncActiveCharacter({ ...library, activeCharacterId: 'a' }, changed)
+    expect(synced.characters.a.data.settings.accentColor).toBe('green')
+    expect(synced.characters.b.data.settings.accentColor).toBe('blue')
+    expect(synced.settings).toMatchObject({ themeMode: 'light', accentColor: 'red' })
+    expect(characterForActivation(synced, 'b')?.settings).toMatchObject({ themeMode: 'light', accentColor: 'blue' })
   })
 
   it('дублирует глубоко, переименовывает и выбирает следующего после удаления', () => {
