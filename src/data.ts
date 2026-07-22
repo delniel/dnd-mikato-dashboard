@@ -1,77 +1,92 @@
-import type { CharacterState, Characteristic } from './domain'
+import type { CharacterState, Characteristic, Item as PersistentItem, Skill as PersistentSkill, Spell as PersistentSpell } from './domain'
 
-const characteristicSkills: Record<string, string[]> = {
-  Сила: ['Атлетика'],
-  Ловкость: ['Акробатика', 'Ловкость рук', 'Скрытность'],
-  Телосложение: [],
-  Интеллект: ['Анализ', 'История', 'Магия', 'Природа', 'Религия'],
-  Мудрость: ['Восприятие', 'Выживание', 'Медицина', 'Проницательность', 'Уход за животными'],
-  Харизма: ['Выступление', 'Запугивание', 'Обман', 'Убеждение'],
+export type Spell = PersistentSpell
+export type Skill = PersistentSkill
+export type Item = PersistentItem
+
+export const initialCharacter: CharacterState = {
+  schemaVersion: 4,
+  profile: { playerName: 'Дель', name: 'Урумир', classBackground: 'Возвращённый к Жизни Магией, рождённый магией', className: '', proficiency: '+3', armorClass: '23', initiative: '', spellCapacity: '9 + 4', hitDie: '1d4', superiorityDie: '1d8', speed: '30', manaRecovery: '+30', mainCharacteristic: 'Телосложение', race: 'Гомункул', raceSubtype: 'Алхимический Гомункул', background: 'Возвращённый к Жизни Магией, рождённый магией', alignment: 'Хаотично Нейтральный', size: 'Средний', powerType: 'Магия', masteryMagic: 'Магия', profession: '', age: '6 лет', height: '160 см', weight: '20', eyes: 'Голубые', hair: 'Красные', skin: 'Светлая', traits: 'Я считаю, что смерть — это биологический процесс.', ideals: 'Познание: Я хочу понять, почему я живу.', bonds: 'Узнать, кто я, что я и кто меня создал.', weaknesses: '', backstory: '', characterNotes: '', avatarId: '' },
+  resources: { hp: { current: 81, max: 81, temporary: 0 }, mana: { current: 300, max: 300 }, superiority: { current: 2, max: 2, dieType: '1d8' } }, experience: 10, level: 11, inspiration: false,
+  senses: { 'Восприятие': '15', 'Проницательность': '15', 'Анализ': '10' }, favorites: [], notes: [], settings: { levelUpBehavior: 'carry', allowNegativeMana: false, themeMode: 'dark', accentColor: 'red' }, characteristics: [], languages: [], proficiencies: [], elements: [], spells: [], skills: [], inventory: [], currencies: { PP: 0, GP: 70, SP: 0, CP: 0 }, diceHistory: [], extras: {},
 }
 
-const createCharacteristics = (): Characteristic[] => Object.entries(characteristicSkills).map(([name, skills]) => ({
-  id: name,
-  name,
-  score: '',
-  check: '',
-  save: '',
-  skills: skills.map((skill) => ({ id: `${name}-${skill}`, name: skill, bonus: '' })),
+const spell = (value: Spell): Spell => value
+export const spells: Spell[] = [
+  spell({ id: 'hydra', name: 'Многозадачность Гидры', elements: ['Мутация'], characteristic: 'Телосложение', components: 'В', castingTime: '1 действие', target: 'На себя', range: 'На себя', duration: '1 минута', manaCost: 60, damageOrHealing: '—', difficulty: 'Сложный', level: '4 уровень', summary: 'Создаёт дополнительную голову и руки, позволяя совершать больше действий и реакций за раунд.', description: 'Ваше тело претерпевает стремительную мутацию — у вас вырастает дополнительная голова и пара дополнительных рук. Эти части тела полностью функциональны.', effects: 'Вы получаете дополнительное действие. Дополнительное действие можно использовать для применения второго заклинания со временем наложения «1 действие» в тот же ход. Вместо второго заклинания можно совершить дополнительную рукопашную атаку оружием. Вы получаете преимущество на спасброски от Ослепления, Оглушения и Очарования. Вы получаете вторую реакцию за раунд. Вторую реакцию можно использовать только для действия «Помощь» или реакционной атаки.', restrictions: 'Общая стоимость заклинаний за один ход не может превышать 90 маны. Нельзя одновременно применять два заклинания, требующих концентрации.', tags: ['Баф', 'Трансформация'], requiresConcentration: false, actionType: 'Действие' }),
+  spell({ id: 'evolution', name: 'Всплеск эволюции', elements: ['Мутация'], characteristic: 'Телосложение', components: 'С', castingTime: '1 действие', target: 'На себя', range: 'На себя', duration: 'Концентрация, до 1 часа', manaCost: 45, damageOrHealing: '—', difficulty: 'Продвинутый', level: '3 уровень', summary: 'Позволяет временно адаптировать тело для плавания, прыжков или улучшенного восприятия.', description: 'Вы вызываете стремительную мутацию в своём теле, подгоняя физическую форму под нужды текущей ситуации.', effects: 'Выберите одну адаптацию. Амфибийность: вы получаете жабры и скорость плавания 45 футов; можете дышать под водой, но на суше — не более 10 минут. Хищные лапы: вы изменяете конечности на кошачьи, игнорируете урон от падения с высоты до 60 футов и удваиваете длину и высоту прыжков. Сенсорная перестройка: цель получает тёмное зрение 90 футов. Если тёмное зрение уже было, его дистанция увеличивается на 30 футов. Также цель получает эхолокацию 30 футов, если не оглушена. Бонусным действием один раз в 10 минут можно заменить адаптацию на другую.', restrictions: 'Требует концентрации. Для замены адаптации заклинатель должен находиться в пределах 120 футов от цели. В исходном описании одновременно указаны дистанция «На себя» и выбор видимого существа. Это сохранено как примечание до уточнения правила.', tags: ['Баф', 'Трансформация', 'Мобильность', 'Разведка'], requiresConcentration: true, actionType: 'Действие' }),
+  spell({ id: 'bio-weapon', name: 'Биооружие', elements: ['Мутация'], characteristic: 'Телосложение / Сила / Ловкость', components: 'В, С', castingTime: '1 действие', target: 'На себя', range: 'На себя', duration: '1 минута', manaCost: 45, damageOrHealing: '—', damage: 'Клинок: 2d6 физического рубящего урона; Копьё: 1d10 физического колющего урона; Молот: 1d10 физического дробящего урона', difficulty: 'Средний', level: '2 уровень', summary: 'Превращает руку в биооружие с тремя боевыми формами и дальностью атак 15 футов.', description: 'Одна из ваших рук стремительно разрастается, превращаясь в биоорганическую массу из мышц и сухожилий, способную трансформироваться в смертоносное оружие.', effects: 'Пока действует заклинание, конечность считается оружием ближнего боя. Все атаки этой конечностью имеют дальность 15 футов. Доступны три формы: Клинок — наносит 2d6 физического рубящего урона. Копьё — наносит 1d10 физического колющего урона и даёт +2 к попаданию. Молот — наносит 1d10 физического дробящего урона; цель должна совершить спасбросок Силы против Сл. спасброска заклинания, при провале цель сбивается с ног. Форму оружия можно менять бонусным действием в начале своего хода.', restrictions: 'Одновременно используется только одна форма биооружия.', tags: ['Атака', 'Баф', 'Трансформация'], requiresConcentration: false, actionType: 'Действие' }),
+  spell({ id: 'perfect-skeleton', name: 'Совершенный скелет', elements: ['Кости'], characteristic: 'Сила / Телосложение', components: 'В, С', castingTime: '2 действия', target: 'На себя', range: 'На себя', duration: 'Концентрация, до 1 минуты', manaCost: 60, damageOrHealing: '—', difficulty: 'Сложный', level: '4 уровень', summary: 'Превращает заклинателя в огромного костяного монстра, значительно усиливая его живучесть и ближний бой.', description: 'Вы полностью преобразуете своё тело в гигантского гуманоидного монстра, состоящего только из костей и мышц. Ваше настоящее тело скрывается в задней части шеи этой формы, а магическая конструкция действует в унисон с вашими движениями.', effects: 'Максимальные хиты удваиваются. К текущим хитам добавляется разница между прежним и новым максимумом. Скорость передвижения становится равна 40 футам. Дальность атак в ближнем бою увеличивается на 10 футов. Вы получаете +4 к броскам атаки и +4 к урону при атаках в ближнем бою. Спасброски Силы и проверки Атлетики совершаются с преимуществом. Размер персонажа становится Огромным.', restrictions: 'Требует концентрации. При потере концентрации или окончании длительности персонаж мгновенно возвращается в обычный облик.', tags: ['Баф', 'Защита', 'Трансформация'], requiresConcentration: true, actionType: 'Действие' }),
+  spell({ id: 'transformation', name: 'Преображение', elements: ['Мутация'], characteristic: 'Телосложение / Харизма', components: 'В, С', castingTime: '1 действие', target: 'На себя', range: 'На себя', duration: '1 час', manaCost: 30, damageOrHealing: '—', difficulty: 'Простой', level: '1 уровень', summary: 'Изменяет внешность, возраст, размеры и телосложение персонажа для маскировки.', description: 'Вы подвергаете своё тело быстрой биологической перестройке, изменяя все или часть физических характеристик.', effects: 'Можно изменить рост до двух категорий: минимум — Маленький, максимум — Большой. Можно изменить массу тела в соответствии с ростом или телосложением. Можно изменить черты лица, телосложение, цвет кожи, волос и глаз. Можно изменить возраст в пределах своей расы без влияния на игровые характеристики. Можно имитировать внешность другой гуманоидной расы.', restrictions: 'Вы сохраняете свою настоящую расу в механическом плане. Вы не получаете расовые черты, способности или особенности имитируемой расы. Изменения не дают прямых преимуществ в бою или навыках. Существо может потратить действие и совершить проверку Интеллекта (Анализ) с помехой против Сл. спасброска заклинания, чтобы распознать маскировку.', tags: ['Трансформация', 'Маскировка', 'Вне боя'], requiresConcentration: false, actionType: 'Действие' }),
+  spell({ id: 'divine-eyes', name: 'Божественные глаза', elements: ['Мутация'], characteristic: 'Мудрость / Телосложение', components: 'С', castingTime: '1 бонусное действие', target: 'На себя', range: 'На себя', duration: 'Концентрация, до 1 минуты', manaCost: 60, damageOrHealing: '—', difficulty: 'Средний', level: '2 уровень', summary: 'Позволяет скопировать одно увиденное заклинание, особый приём или боевую способность.', description: 'Ваши глаза мутируют в чуждую органическую структуру. Зрачки распадаются на вращающиеся сегменты, анализирующие движения, магию и боевое поведение противников.', effects: 'Если вы видите, как существо в пределах 60 футов применяет заклинание без концентрации, вы можете бонусным действием скопировать его. На следующем ходу скопированное заклинание можно применить один раз без затрат маны. Скопированное заклинание использует ваши характеристики и Сл. спасброска заклинаний. Также можно скопировать особый приём, способность монстра, боевой приём, манёвр, действие или способность с использованием костей превосходства или костей хитов.', restrictions: 'За всё время действия можно скопировать только одно магическое или физическое действие. Если скопированная способность не используется до окончания заклинания, она пропадает. Для сохранения скопированного действия необходимо поддерживать концентрацию.', tags: ['Баф', 'Копирование'], requiresConcentration: true, actionType: 'Бонусное действие' }),
+  spell({ id: 'ribs', name: 'Рёбра', elements: ['Кости'], characteristic: 'Телосложение', components: 'В', castingTime: '1 бонусное действие', target: 'На себя', range: 'На себя', duration: 'До конца следующего хода', manaCost: 30, damageOrHealing: '—', difficulty: 'Продвинутый', level: '3 уровень', summary: 'Создаёт костяной защитный каркас, временно повышающий КД персонажа.', description: 'Массивные костяные рёбра прорастают из земли и изгибаются вокруг вас, образуя подвижный защитный барьер.', effects: 'Ваш КД становится равен 16 + модификатор Телосложения + модификатор Ловкости. Новое значение заменяет текущий КД только в том случае, если оно выше. Защита считается физической, а не магической.', restrictions: 'Каркас может быть разрушен магическими и другими эффектами, игнорирующими физическую защиту. Заклинание не работает, если на вас уже действует другое заклинание, повышающее КД.', tags: ['Защита', 'Баф'], requiresConcentration: false, actionType: 'Бонусное действие' }),
+  spell({ id: 'awakened-skeleton', name: 'Пробуждённый скелет', elements: ['Кости'], characteristic: 'Сила / Телосложение', components: 'В, С', castingTime: '1 действие', target: 'На себя', range: 'На себя', duration: '1 минута', manaCost: 60, damageOrHealing: '—', difficulty: 'Продвинутый', level: '3 уровень', summary: 'Окружает персонажа гигантским костяным экзоскелетом, усиливающим защиту и ближние атаки.', description: 'Вы призываете гигантский скелет гуманоидного существа от торса и выше. Он окружает ваше тело, оставляя свободное пространство внутри, и полностью повторяет ваши движения.', effects: 'Дальность ближних атак оружием и заклинаниями увеличивается на 15 футов. Вы получаете +4 к КД. Атаки ближнего боя получают +2 к броскам атаки и урону. Атаки считаются магическими для преодоления сопротивления и иммунитета к немагическим атакам.', restrictions: 'Скорость становится равна 20 футам. При получении критического попадания заклинание немедленно заканчивается.', tags: ['Атака', 'Защита', 'Баф', 'Трансформация'], requiresConcentration: false, actionType: 'Действие' }),
+  spell({ id: 'mobile-bone', name: 'Выдвижная кость', elements: ['Кости'], characteristic: 'Сила / Мудрость', components: 'С', castingTime: '1 реакция, когда существо входит в зону касания 5 футов', target: 'Одно существо', range: '5 футов', duration: '1 раунд', manaCost: 60, damageOrHealing: '—', damage: '2d6 + модификатор Телосложения физического колющего урона. При провале спасброска: дополнительно 1d10 физического колющего урона.', difficulty: 'Средний', level: '2 уровень', summary: 'Реакцией выдвигает костяной шип, нанося колющий урон и вызывая внутреннее кровотечение.', description: 'Искажая собственный скелет, вы выдвигаете острый костяной шип из тела и наносите внезапный удар по врагу.', effects: 'Совершите атаку заклинанием в ближнем бою против КД цели. При попадании цель получает 2d6 + модификатор Телосложения колющего урона. После попадания цель совершает спасбросок Телосложения против Сл. ваших заклинаний. При провале цель получает дополнительный 1d10 колющего урона в начале следующего хода из-за внутреннего кровотечения.', restrictions: 'Реакция доступна только в момент, когда существо входит в зону касания 5 футов.', tags: ['Атака', 'Реакция', 'Дебаф'], requiresConcentration: false, actionType: 'Реакция' }),
+  spell({ id: 'healing', name: 'Лечение', elements: ['Исцеление'], characteristic: 'Мудрость', components: 'В, С', castingTime: '1 действие', target: 'Одно существо', range: 'Касание', duration: 'Мгновенно', manaCost: 45, damageOrHealing: '—', healing: '10d4 + модификатор Мудрости', difficulty: 'Простой', level: '1 уровень', summary: 'Восстанавливает большое количество хитов существу, которого касается заклинатель.', description: 'Вы наполняете союзника целительной энергией.', effects: 'Цель восстанавливает 10d4 + модификатор Мудрости хитов.', restrictions: 'Не действует на нежить и конструктов.', tags: ['Лечение'], requiresConcentration: false, actionType: 'Действие' }),
+  spell({ id: 'restore-flesh', name: 'Восстановление плоти', elements: ['Исцеление'], characteristic: 'Мудрость', components: 'В, С', castingTime: '1 действие', target: 'Одно существо', range: 'Касание', duration: 'Мгновенно', manaCost: 60, damageOrHealing: '—', healing: '8d8', difficulty: 'Продвинутый', level: '3 уровень', summary: 'Исцеляет цель, снимает истощение и восстанавливает одну утраченную конечность.', description: 'Вы направляете мощную магию, восстанавливающую и заново создающую повреждённые ткани цели.', effects: 'Цель восстанавливает 8d8 хитов. Цель избавляется от одного уровня истощения. Заклинание восстанавливает одну выбранную утраченную конечность. Восстановление конечности полностью завершается в течение 1 минуты. В этот период конечность функциональна, но остаётся уязвимой.', restrictions: 'Не действует на нежить и конструктов.', tags: ['Лечение', 'Восстановление'], requiresConcentration: false, actionType: 'Действие' }),
+  spell({ id: 'medic-mark', name: 'Метка медика', elements: ['Исцеление'], characteristic: 'Мудрость', components: 'В, С', castingTime: '1 бонусное действие', target: 'На себя', range: 'На себя', duration: 'Концентрация, до 1 минуты', manaCost: 30, damageOrHealing: '—', healing: '1d8 + модификатор заклинательной способности в начале каждого хода', difficulty: 'Продвинутый', level: '3 уровень', summary: 'Усиливает личную регенерацию и повышает эффективность лечения других существ.', description: 'Вы активируете магический знак, ускоряющий регенерацию и усиливающий медицинские способности.', effects: 'В начале каждого своего хода вы восстанавливаете 1d8 + модификатор заклинательной способности хитов. Вы получаете +2 к спасброскам Телосложения. При лечении другого существа можно удвоить модификатор Мудрости, добавляемый к восстановлению хитов. К лечению можно один раз за каждое заклинание добавить результат проверки Медицины.', restrictions: 'Требует концентрации.', tags: ['Лечение', 'Баф'], requiresConcentration: true, actionType: 'Бонусное действие' }),
+  spell({ id: 'life-impulse', name: 'Импульс жизни', elements: ['Исцеление'], characteristic: 'Мудрость', components: 'В, С', castingTime: '1 бонусное действие', target: 'Союзники в ауре', range: 'На себя, аура 10 футов', duration: 'Концентрация, до 3 раундов', manaCost: 45, damageOrHealing: '—', healing: '8d6 + модификатор Мудрости', difficulty: 'Средний', level: '2 уровень', summary: 'Накапливает жизненную энергию, позволяя выпустить усиливающийся лечебный импульс по союзникам.', description: 'Яркое зелёное свечение начинает пульсировать вокруг вас, наполняя пространство магией жизни.', effects: 'После активации вы можете в любой момент в течение следующих трёх раундов выпустить накопленную энергию при применении заклинания лечения. Если выпустить импульс в тот же ход, союзники в пределах 10 футов восстанавливают 8d6 + модификатор Мудрости хитов. Если пропустить второй ход после активации, к лечению добавляется 1d10. Если пропустить три хода, к лечению добавляется 1d20.', restrictions: 'Требует концентрации. Максимальная длительность накопления — 3 раунда.', tags: ['Лечение', 'Баф', 'Аура'], requiresConcentration: true, actionType: 'Бонусное действие' }),
+]
+
+export const skillsPlus: Skill[] = [
+  { id: 'pain', name: 'Привычка к боли', difficulty: 'Сложный', actionType: 'Пассивное', summary: 'Сопротивление режущему урону.', mechanics: 'Постоянное сопротивление к режущему урону. Урон уменьшается вдвое.', condition: '[Телосложение 20]', requirement: 'Ничего', status: 'passive', tags: ['Защита'] },
+  { id: 'skin', name: 'Железная шкура', difficulty: 'Продвинутый', actionType: 'Пассивное', summary: 'КД без тяжёлой брони.', mechanics: 'Без тяжёлой брони КД = 10 + модификатор Ловкости + модификатор Телосложения.', condition: '[Телосложение 15], Мастерство', requirement: 'Ничего', status: 'passive', tags: ['Защита'] },
+  { id: 'mana-reserve', name: 'Большой резервуар маны', difficulty: 'Сложный', actionType: 'Пассивное', summary: '+100 к максимуму маны.', mechanics: '+100 единиц маны к максимальному объёму.', condition: '[Интеллект 20] или [Мудрость 20] или [Харизма 20], Магия', requirement: 'Ничего', status: 'passive', tags: ['Мана'] },
+  { id: 'gift', name: 'Магический дар', difficulty: 'Сложный', actionType: 'Пассивное', summary: 'Новый элемент и больше заклинаний.', mechanics: 'Изучаете 1 любой элемент на выбор и получаете +4 к максимальному количеству заклинаний.', condition: '[Мудрость 20], Магия', requirement: 'Ничего', status: 'passive', tags: ['Магия'] },
+  { id: 'spirit', name: 'Духовное укрепление тела: Совершенство', difficulty: 'Экстремальный', actionType: 'Пассивное', summary: 'Иммунитет к болезням и яду.', mechanics: 'Иммунитет к болезням и урону ядом.', condition: '[Телосложение 30], [Мудрость 20], Магия', requirement: 'Ничего', status: 'passive', tags: ['Защита'] },
+  { id: 'tough', name: 'Живучий', difficulty: '—', actionType: 'Пассивное', summary: '+2 Телосложение и больше восстановления.', mechanics: 'Телосложение увеличивается на +2. При коротком отдыхе восстанавливается на 4к4 +4 хитов больше.', condition: 'Телосложение', requirement: 'Ничего', status: 'passive', tags: ['Лечение'] },
+  { id: 'adapt', name: 'Адаптация к урону', difficulty: 'Экстремальный', actionType: 'Реакция', summary: 'Сопротивление выбранному урону до конца боя.', mechanics: 'При атаке определённым типом урона можно получить сопротивление к нему до конца боя.', condition: '[Телосложение 30]', requirement: '3 кости превосходства', status: 'reaction', tags: ['Защита'] },
+]
+
+export const inventory: Item[] = [
+  { id: 'crossbow', name: 'Лёгкий арбалет', category: 'Оружие', quantity: '1', damage: '2к8', damageType: 'Пробивной', range: '80/320 футов', properties: 'Простое, перезарядка (нужна отдельная загрузка перед выстрелом), двуручное удержание при стрельбе.', cost: '15 зм.', description: '', equipped: true, note: '' },
+  { id: 'katana', name: 'Меч (одноручный меч-катана)', category: 'Оружие', quantity: '1', damage: '2к8', damageType: 'Рубящий', range: '', properties: 'Воинское, одноручное, можно использовать в паре с другим оружием.', cost: '15 зм.', description: '', equipped: true, note: '' },
+  { id: 'shell', name: 'Скорлупа яйца', category: 'Важные предметы', quantity: '1', damage: '', damageType: '', range: '', properties: '', cost: '', description: 'Скорлупа яйца, из которого появился персонаж.', equipped: false, note: '' },
+]
+
+export const characteristics = [
+  { name: 'Сила', score: '4', check: '−4', save: '+0', skills: ['Атлетика'] }, { name: 'Ловкость', score: '14', check: '+2', save: '+2', skills: ['Акробатика', 'Ловкость рук', 'Скрытность'] },
+  { name: 'Телосложение', score: '30', check: '+10', save: '+13', skills: [] }, { name: 'Интеллект', score: '8', check: '−1', save: '−1', skills: ['Анализ +3', 'История', 'Магия', 'Природа', 'Религия'] },
+  { name: 'Мудрость', score: '20', check: '+5', save: '+5', skills: ['Восприятие', 'Выживание +3', 'Медицина', 'Проницательность +3', 'Уход за животными'] }, { name: 'Харизма', score: '8', check: '−1', save: '−1', skills: ['Выступление +6', 'Запугивание', 'Обман', 'Убеждение'] },
+]
+
+const defaultCharacteristics: Characteristic[] = characteristics.map((value) => ({
+  id: value.name,
+  name: value.name,
+  score: value.score,
+  check: value.check,
+  save: value.save,
+  skills: value.skills.map((label) => {
+    const match = label.match(/^(.*?)(?:\s+([+−-]\d+))?$/)
+    const name = match?.[1] ?? label
+    const bonus = match?.[2] ?? ''
+    return { id: `${value.name}-${name}`, name, bonus }
+  }),
 }))
+export function createUrumirCharacter(): CharacterState { return structuredClone({ ...initialCharacter, characteristics: defaultCharacteristics, languages: [{ id: 'common', name: 'Общий' }, { id: 'gestures', name: 'Жесты' }], proficiencies: [{ id: 'simple-melee', name: 'Простое ближнее оружие' }, { id: 'simple-ranged', name: 'Простое дальнее оружие' }], elements: [{ id: 'mutation', name: 'Мутация' }, { id: 'bones', name: 'Кости' }, { id: 'healing', name: 'Исцеление' }], spells, skills: skillsPlus, inventory }) }
+
+export function createBlankCharacter(): CharacterState {
+  const state = createUrumirCharacter()
+  state.profile = Object.fromEntries(Object.keys(state.profile).map((key) => [key, '']))
+  state.resources = { hp: { current: 0, max: 0, temporary: 0 }, mana: { current: 0, max: 0 }, superiority: { current: 0, max: 0, dieType: '' } }
+  state.experience = 0
+  state.level = 0
+  state.inspiration = false
+  state.senses = { Восприятие: '', Проницательность: '', Анализ: '' }
+  state.favorites = []
+  state.notes = []
+  state.characteristics = state.characteristics.map((entry) => ({ ...entry, score: '', check: '', save: '', skills: entry.skills.map((skill) => ({ ...skill, bonus: '' })) }))
+  state.languages = []
+  state.proficiencies = []
+  state.elements = []
+  state.spells = []
+  state.skills = []
+  state.inventory = []
+  state.currencies = { PP: 0, GP: 0, SP: 0, CP: 0 }
+  state.diceHistory = []
+  return state
+}
 
 export function createInitialCharacter(): CharacterState {
-  return {
-    schemaVersion: 4,
-    profile: {
-      playerName: '',
-      name: '',
-      classBackground: '',
-      proficiency: '',
-      armorClass: '',
-      spellCapacity: '',
-      hitDie: '',
-      superiorityDie: '',
-      speed: '',
-      manaRecovery: '',
-      mainCharacteristic: '',
-      race: '',
-      raceSubtype: '',
-      alignment: '',
-      profession: '',
-      masteryMagic: '',
-      age: '',
-      height: '',
-      weight: '',
-      eyes: '',
-      hair: '',
-      skin: '',
-      traits: '',
-      ideals: '',
-      bonds: '',
-      weaknesses: '',
-      backstory: '',
-      avatarId: '',
-    },
-    resources: {
-      hp: { current: 0, max: 0, temporary: 0 },
-      mana: { current: 0, max: 0 },
-      superiority: { current: 0, max: 0, dieType: '' },
-    },
-    experience: 0,
-    level: 0,
-    inspiration: false,
-    senses: { Восприятие: '', Проницательность: '', Анализ: '' },
-    favorites: [],
-    notes: [],
-    settings: { levelUpBehavior: 'carry', allowNegativeMana: false, themeMode: 'dark', accentColor: 'red' },
-    characteristics: createCharacteristics(),
-    languages: [],
-    proficiencies: [],
-    elements: [],
-    spells: [],
-    skills: [],
-    inventory: [],
-    currencies: { PP: 0, GP: 0, SP: 0, CP: 0 },
-    diceHistory: [],
-    extras: {},
-  }
+  return import.meta.env.VITE_PUBLIC_BLANK === 'true' ? createBlankCharacter() : createUrumirCharacter()
 }
