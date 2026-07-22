@@ -125,6 +125,39 @@ export function setSuperiorityDie(state: CharacterState, dieType: string): Chara
   return { ...state, resources: { ...state.resources, superiority: { ...state.resources.superiority, dieType } } }
 }
 
+const currencyOrder: CurrencyKey[] = ['PP', 'GP', 'SP', 'CP']
+
+export function convertCurrency(state: CharacterState, from: CurrencyKey, to: CurrencyKey): CharacterState {
+  const fromIndex = currencyOrder.indexOf(from)
+  const toIndex = currencyOrder.indexOf(to)
+  if (Math.abs(fromIndex - toIndex) !== 1) return state
+
+  const exchangeDown = toIndex > fromIndex
+  const cost = exchangeDown ? 1 : 10
+  const gain = exchangeDown ? 10 : 1
+  if (state.currencies[from] < cost) return state
+
+  return {
+    ...state,
+    currencies: {
+      ...state.currencies,
+      [from]: state.currencies[from] - cost,
+      [to]: state.currencies[to] + gain,
+    },
+  }
+}
+
+export function manaRecoveryAmount(value: string): number {
+  const match = value.match(/[+-]?\d+/)
+  return match ? Math.max(0, Number.parseInt(match[0], 10)) : 0
+}
+
+export function restoreMana(state: CharacterState): CharacterState {
+  const amount = manaRecoveryAmount(state.profile.manaRecovery ?? '')
+  if (amount <= 0 || state.resources.mana.current >= state.resources.mana.max) return state
+  return changeResource(state, 'mana', state.resources.mana.current + amount, `Восстановление: +${amount} маны`)
+}
+
 export function deductMana(state: CharacterState, cost: number): CharacterState | null {
   if (!state.settings.allowNegativeMana && state.resources.mana.current < cost) return null
   return changeResource(state, 'mana', state.resources.mana.current - cost, `Заклинание: −${cost} маны`)

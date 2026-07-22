@@ -2,8 +2,10 @@ import { create } from 'zustand'
 import { createInitialCharacter } from './data'
 import {
   changeResource,
+  convertCurrency,
   deductMana,
   levelUp,
+  restoreMana,
   restoreCharacter,
   rollDice,
   setLevel,
@@ -36,6 +38,7 @@ type Store = CharacterState & {
   setTemporaryHp: (value: number) => void
   setSuperiorityDie: (dieType: string) => void
   cast: (cost: number) => boolean
+  recoverMana: () => boolean
   undo: () => void
   levelUp: () => void
   toggleInspiration: () => void
@@ -45,6 +48,7 @@ type Store = CharacterState & {
   setSkillBonus: (characteristicId: string, skillId: string, value: string) => void
   setCurrency: (key: CurrencyKey, value: number) => void
   adjustCurrency: (key: CurrencyKey, delta: number) => void
+  convertCurrency: (from: CurrencyKey, to: CurrencyKey) => boolean
   upsertEntry: (collection: Collection, entry: NamedEntry) => void
   deleteEntry: (collection: Collection, id: string) => void
   upsertSpell: (spell: Spell) => void
@@ -90,6 +94,13 @@ export const useCharacterStore = create<Store>((set, get) => ({
     set(next)
     return true
   },
+  recoverMana: () => {
+    const current = get()
+    const next = restoreMana(current)
+    if (next === current) return false
+    set(next)
+    return true
+  },
   undo: () => set((state) => undoResource(state)),
   levelUp: () => set((state) => levelUp(state)),
   toggleInspiration: () => set((state) => ({ inspiration: !state.inspiration })),
@@ -100,6 +111,13 @@ export const useCharacterStore = create<Store>((set, get) => ({
   setSkillBonus: (characteristicId, skillId, bonus) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === characteristicId ? { ...characteristic, skills: characteristic.skills.map((skill) => skill.id === skillId ? { ...skill, bonus } : skill) } : characteristic) })),
   setCurrency: (key, value) => set((state) => ({ currencies: { ...state.currencies, [key]: Math.max(0, Number.isFinite(value) ? value : state.currencies[key]) } })),
   adjustCurrency: (key, delta) => set((state) => ({ currencies: { ...state.currencies, [key]: Math.max(0, state.currencies[key] + delta) } })),
+  convertCurrency: (from, to) => {
+    const current = get()
+    const next = convertCurrency(current, from, to)
+    if (next === current) return false
+    set(next)
+    return true
+  },
 
   upsertEntry: (collection, entry) => set((state) => ({ [collection]: updateList(state[collection], entry) })),
   deleteEntry: (collection, id) => set((state) => ({ [collection]: state[collection].filter((entry) => entry.id !== id) })),

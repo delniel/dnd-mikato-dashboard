@@ -8,6 +8,15 @@
     <link rel="icon" href="%BASE_URL%favicon.svg" />
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
     <title>DnD MGE — лист персонажа</title>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          const scopePath = new URL(document.baseURI).pathname
+          registrations.filter((registration) => new URL(registration.scope).pathname.startsWith(scopePath)).forEach((registration) => registration.unregister())
+        })
+      }
+      if ('caches' in window) caches.keys().then((keys) => keys.filter((key) => key.startsWith('urumir-')).forEach((key) => caches.delete(key)))
+    </script>
   </head>
   <body>
     <div id="root"></div>

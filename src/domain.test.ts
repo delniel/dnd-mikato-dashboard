@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { changeResource, deductMana, levelUp, migrateCharacter, restoreCharacter, rollDice, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, thresholdForLevel, undoResource } from './domain'
+import { createInitialCharacter } from './data'
+import { changeResource, convertCurrency, deductMana, levelUp, manaRecoveryAmount, migrateCharacter, restoreCharacter, restoreMana, rollDice, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
-import { createTestCharacter } from './test/fixtures'
 
-const base = () => createTestCharacter()
+const base = () => createInitialCharacter()
 
 describe('ресурсы и уровень', () => {
   it('меняет HP и ману только на переданный один шаг', () => {
@@ -88,7 +88,7 @@ describe('редактируемые данные листа', () => {
     useCharacterStore.getState().reset()
     useCharacterStore.getState().adjustCurrency('GP', 1)
     useCharacterStore.getState().setCurrency('PP', 7)
-    expect(useCharacterStore.getState().currencies).toEqual({ PP: 7, GP: 1, SP: 0, CP: 0 })
+    expect(useCharacterStore.getState().currencies).toEqual({ PP: 7, GP: 71, SP: 0, CP: 0 })
   })
 
   it('создаёт, изменяет и удаляет заклинание', () => {
@@ -157,7 +157,7 @@ describe('кубики и миграция', () => {
 
   it('мигрирует прежний снимок, сохраняя ресурсы, заметку, избранное, аватар и тип кости', () => {
     const old = {
-      profile: { name: 'Старый персонаж', avatarId: 'avatar-1', elements: 'Мутация, Кости', superiorityDie: '1d6', powerType: 'Мастерство и Магия' },
+      profile: { name: 'Старый Урумир', avatarId: 'avatar-1', elements: 'Мутация, Кости', superiorityDie: '1d6', powerType: 'Мастерство и Магия' },
       resources: { hp: { current: 40, max: 81 }, mana: { current: 200, max: 300 }, superiority: { current: 1, max: 2 } },
       experience: 18,
       level: 11,
@@ -203,7 +203,7 @@ describe('кубики и миграция', () => {
     expect(migrated.extras).toMatchObject({ retiredCurrencies: { EP: 7 } })
   })
 
-  it('сохраняет очищенные коллекции и объединяет только старые поля класса', () => {
+  it('сохраняет намеренно очищенные коллекции и объединяет старые поля класса', () => {
     const migrated = migrateCharacter({
       profile: { className: 'Следопыт', background: 'Странник' },
       languages: [],
@@ -214,6 +214,7 @@ describe('кубики и миграция', () => {
     expect(migrated.languages).toEqual([])
     expect(migrated.proficiencies).toEqual([])
     expect(migrated.elements).toEqual([])
+    expect(migrateCharacter(migrated).profile.classBackground).toBe('Следопыт · Странник')
     expect(migrateCharacter({ ...migrated, profile: { ...migrated.profile, classBackground: '', background: 'Старое значение' } }).profile.classBackground).toBe('')
   })
 
@@ -225,9 +226,31 @@ describe('кубики и миграция', () => {
   it('импортирует старый экспорт с новыми значениями по умолчанию', () => {
     const restored = restoreCharacter(JSON.stringify({ profile: { name: 'Импорт' }, resources: base().resources }))
     expect(restored.profile.name).toBe('Импорт')
-    expect(restored.currencies.GP).toBe(0)
-    expect(restored.spells).toEqual([])
+    expect(restored.currencies.GP).toBe(70)
+    expect(restored.spells.length).toBeGreaterThan(0)
     expect(restored.notes).toEqual([])
     expect(restoreCharacter(serializeCharacter(base())).schemaVersion).toBe(4)
+  })
+
+  it('конвертирует только соседние номиналы монет по курсу 1 к 10', () => {
+    const state = { ...base(), currencies: { PP: 1, GP: 10, SP: 0, CP: 0 } }
+    const down = convertCurrency(state, 'PP', 'GP')
+    expect(down.currencies).toEqual({ PP: 0, GP: 20, SP: 0, CP: 0 })
+    const up = convertCurrency(down, 'GP', 'PP')
+    expect(up.currencies).toEqual({ PP: 1, GP: 10, SP: 0, CP: 0 })
+    expect(convertCurrency(state, 'PP', 'SP')).toBe(state)
+    expect(convertCurrency({ ...state, currencies: { PP: 0, GP: 9, SP: 0, CP: 0 } }, 'GP', 'PP').currencies.GP).toBe(9)
+  })
+
+  it('восстанавливает ману по текстовому показателю и не превышает максимум', () => {
+    const state = base()
+    state.profile.manaRecovery = '+30 маны'
+    state.resources.mana = { current: 285, max: 300 }
+    expect(manaRecoveryAmount(state.profile.manaRecovery)).toBe(30)
+    const restored = restoreMana(state)
+    expect(restored.resources.mana.current).toBe(300)
+    expect(restored.recentAction?.label).toBe('Восстановление: +30 маны')
+    expect(restoreMana(restored)).toBe(restored)
+    expect(manaRecoveryAmount('не указано')).toBe(0)
   })
 })

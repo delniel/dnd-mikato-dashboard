@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
-import { ArchiveRestore, BookOpen, Copy, Dices, Download, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Trash2, Upload, UserRound, WandSparkles, X, type LucideIcon } from 'lucide-react'
+import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, Copy, Dices, Download, FileArchive, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Trash2, Upload, UserRound, WandSparkles, X, type LucideIcon } from 'lucide-react'
+import { createCharacterBackup, restoreCharacterBackup } from './backup'
 import { cloneImage, db, loadCharacter, loadImage, saveCharacter, saveImage } from './db'
-import { serializeCharacter, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
+import { manaRecoveryAmount, serializeCharacter, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
 import { useCharacterStore } from './store'
 
 type Page = 'Обзор' | 'Характеристики' | 'Заклинания и Способности' | 'Навыки +' | 'Инвентарь' | 'Персонаж' | 'Заметки' | 'Настройки'
@@ -23,6 +24,12 @@ const currencies: Array<{ key: CurrencyKey; label: string; ratio?: string; tone:
   { key: 'SP', label: 'СМ', ratio: '10 ММ', tone: 'silver' },
   { key: 'CP', label: 'ММ', tone: 'copper' },
 ]
+const currencyExchanges: Record<CurrencyKey, Array<{ from: CurrencyKey; to: CurrencyKey; label: string; direction: 'left' | 'right' }>> = {
+  PP: [{ from: 'PP', to: 'GP', label: '1 ПМ → 10 ЗМ', direction: 'right' }],
+  GP: [{ from: 'GP', to: 'PP', label: '10 ЗМ → 1 ПМ', direction: 'left' }, { from: 'GP', to: 'SP', label: '1 ЗМ → 10 СМ', direction: 'right' }],
+  SP: [{ from: 'SP', to: 'GP', label: '10 СМ → 1 ЗМ', direction: 'left' }, { from: 'SP', to: 'CP', label: '1 СМ → 10 ММ', direction: 'right' }],
+  CP: [{ from: 'CP', to: 'SP', label: '10 ММ → 1 СМ', direction: 'left' }],
+}
 const accentOptions = [
   ['red', 'Красный'], ['blue', 'Синий'], ['cyan', 'Голубой'], ['green', 'Зелёный'], ['purple', 'Фиолетовый'], ['pink', 'Розовый'], ['yellow', 'Жёлтый'],
 ] as const
@@ -245,7 +252,7 @@ function Overview() {
     {state.recentAction && <button className="undo-banner" type="button" onClick={state.undo}><ArchiveRestore size={17} />Отменить: {state.recentAction.label}</button>}
 
     <section className="overview-grid">
-      <OverviewStats title="Параметры боя" values={[['КД', 'armorClass'], ['Скорость', 'speed'], ['Бонус владения', 'proficiency']]} />
+      <OverviewStats title="Параметры боя" values={[['КД', 'armorClass'], ['Скорость', 'speed'], ['Инициатива', 'initiative'], ['Бонус владения', 'proficiency']]} />
       <OverviewStats title="Боевые резервы" values={[['Ёмкость заклинаний', 'spellCapacity'], ['Кость хитов', 'hitDie'], ['Восстановление маны', 'manaRecovery']]} />
       <Card className="experience">
         <div className="section-title"><div><p className="eyebrow">Опыт</p><h3>Прогресс уровня</h3></div>{canLevel && <button className="button primary" type="button" onClick={state.levelUp}>Повысить уровень</button>}</div>
@@ -271,6 +278,7 @@ function ResourceCard({ title, caption, color, resourceKey }: { title: string; c
       : <p className="resource-detail"><span>Кость превосходства</span><strong>{noValue(dieType)}</strong></p>)}
     {resourceKey === 'hp' ? <HpProgress current={resource.current} temporary={resource.temporary ?? 0} max={resource.max} /> : <Progress value={resource.current} max={resource.max} color={color} />}
     <Counter label={`${title}: текущее значение`} value={resource.current} onChange={(value) => state.setResource(resourceKey, value)} onAdjust={(delta) => state.adjust(resourceKey, delta)} steps={resourceKey === 'hp' || resourceKey === 'mana' ? [1, 5, 10] : [1]} />
+    {resourceKey === 'mana' && <button className="button ghost resource-action" type="button" disabled={manaRecoveryAmount(state.profile.manaRecovery ?? '') <= 0 || resource.current >= resource.max} onClick={state.recoverMana}><ArchiveRestore size={16} />Восстановление маны (+{manaRecoveryAmount(state.profile.manaRecovery ?? '')})</button>}
     {resourceKey === 'hp' && <div className="temporary-hp"><span>Временные хиты</span><Counter label="Временные хиты" value={resource.temporary ?? 0} onChange={state.setTemporaryHp} onAdjust={(delta) => state.setTemporaryHp((resource.temporary ?? 0) + delta)} steps={[1, 5, 10]} /></div>}
     {state.editing && <div className="resource-max"><FieldValue label={`${title}: максимум`} value={String(resource.max)} onChange={(value) => state.setResourceMax(resourceKey, Number(value))} editable /></div>}
   </Card>
@@ -278,7 +286,7 @@ function ResourceCard({ title, caption, color, resourceKey }: { title: string; c
 
 function OverviewStats({ title, values }: { title: string; values: Array<[string, string]> }) {
   const state = useCharacterStore()
-  return <Card className="overview-stats"><p className="eyebrow">Показатели</p><h3>{title}</h3><div className="stat-row">{values.map(([label, key]) => state.editing ? <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable /> : <div className="stat-value" key={key}><span>{label}</span><strong>{noValue(state.profile[key] ?? '')}</strong></div>)}</div></Card>
+  return <Card className="overview-stats"><p className="eyebrow">Показатели</p><h3>{title}</h3><div className={`stat-row stat-row-${values.length}`}>{values.map(([label, key]) => state.editing ? <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable /> : <div className="stat-value" key={key}><span>{label}</span><strong>{noValue(state.profile[key] ?? '')}</strong></div>)}</div></Card>
 }
 
 function HpProgress({ current, temporary, max }: { current: number; temporary: number; max: number }) {
@@ -440,7 +448,21 @@ function InventoryPage() {
     state.upsertItem({ ...item, id: newId(), name: `${item.name} — копия`, ...(copiedImageId ? { imageId: copiedImageId } : {}) })
     setNotice(`Создана копия предмета «${item.name}».`)
   }
-  return <div className="page-stack"><section className="currency-grid">{currencies.map(({ key, label, ratio, tone }) => <Card key={key} className={`currency ${tone}`}><div className="currency-heading"><p className="eyebrow">{label}</p>{ratio && <span>{ratio}</span>}</div><Counter label={`${label}: количество`} value={state.currencies[key]} onChange={(value) => state.setCurrency(key, value)} onAdjust={(delta) => state.adjustCurrency(key, delta)} steps={[1, 10, 100]} /></Card>)}</section><section className="page-toolbar"><p className="page-intro">Валюта хранится отдельно от предметов и не конвертируется автоматически.</p><button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={16} />Добавить предмет</button></section>{notice && <p className="notice" role="status">{notice}</p>}{state.inventory.length ? <section className="inventory-grid">{state.inventory.map((item) => <Card key={item.id} className="item-card"><ImageFrame imageId={item.imageId} label={item.name} className="item-image" /><div className="section-title"><div><p className="eyebrow">{item.category || 'Категория не указана'}</p><h3>{item.name}</h3></div>{item.equipped && <span className="equipped">Экипировано</span>}</div><p className="quiet">Количество: <strong>{noValue(item.quantity)}</strong></p><dl className="details-grid">{item.damage && <Detail label="Урон" value={item.damage} />}{item.damageType && <Detail label="Тип урона" value={item.damageType} />}{item.range && <Detail label="Дальность" value={item.range} />}{item.cost && <Detail label="Стоимость" value={item.cost} />}</dl>{(item.description || item.note || item.properties) && <p className="item-summary">{item.description || item.note || item.properties}</p>}<CardActions itemName={item.name} leftAction={<button className={item.equipped ? 'unequip-item' : 'equip-item'} type="button" aria-label={`${item.equipped ? 'Снять' : 'Экипировать'} ${item.name}`} onClick={() => { state.toggleItemEquipped(item.id); setNotice(item.equipped ? `Предмет «${item.name}» снят.` : `Предмет «${item.name}» экипирован.`) }}>{item.equipped ? 'Снять' : 'Экипировать'}</button>} onEdit={() => setEditing(item)} onDuplicate={() => void duplicate(item)} onDelete={() => { if (window.confirm(`Удалить «${item.name}»?`)) { state.deleteItem(item.id); setNotice(`Предмет «${item.name}» удалён.`) } }} /></Card>)}</section> : <EmptyState title="Инвентарь пуст" text="Добавьте первый предмет — он будет сохранён на устройстве." />}{editing && <ItemEditor item={editing === 'new' ? blankItem() : editing} onClose={() => setEditing(null)} />}</div>
+  const exchange = (from: CurrencyKey, to: CurrencyKey, label: string) => {
+    setNotice(state.convertCurrency(from, to) ? `Конвертация выполнена: ${label}.` : `Недостаточно монет для конвертации: ${label}.`)
+  }
+
+  return <div className="page-stack">
+    <section className="currency-grid">{currencies.map(({ key, label, ratio, tone }) => <Card key={key} className={`currency ${tone}`}>
+      <div className="currency-heading"><p className="eyebrow">{label}</p>{ratio && <span>{ratio}</span>}</div>
+      <Counter label={`${label}: количество`} value={state.currencies[key]} onChange={(value) => state.setCurrency(key, value)} onAdjust={(delta) => state.adjustCurrency(key, delta)} steps={[1, 10, 100]} />
+      <div className="currency-conversions">{currencyExchanges[key].map((conversion) => <button key={`${conversion.from}-${conversion.to}`} type="button" aria-label={`Конвертировать ${conversion.label}`} onClick={() => exchange(conversion.from, conversion.to, conversion.label)}>{conversion.direction === 'left' ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}<span>{conversion.label}</span></button>)}</div>
+    </Card>)}</section>
+    <section className="page-toolbar"><p className="page-intro">Монеты можно конвертировать по курсу 1 к 10 между соседними номиналами.</p><button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={16} />Добавить предмет</button></section>
+    {notice && <p className="notice" role="status">{notice}</p>}
+    {state.inventory.length ? <section className="inventory-grid">{state.inventory.map((item) => <Card key={item.id} className="item-card"><ImageFrame imageId={item.imageId} label={item.name} className="item-image" /><div className="section-title"><div><p className="eyebrow">{item.category || 'Категория не указана'}</p><h3>{item.name}</h3></div>{item.equipped && <span className="equipped">Экипировано</span>}</div><p className="quiet">Количество: <strong>{noValue(item.quantity)}</strong></p><dl className="details-grid">{item.damage && <Detail label="Урон" value={item.damage} />}{item.damageType && <Detail label="Тип урона" value={item.damageType} />}{item.range && <Detail label="Дальность" value={item.range} />}{item.cost && <Detail label="Стоимость" value={item.cost} />}</dl>{(item.description || item.note || item.properties) && <p className="item-summary">{item.description || item.note || item.properties}</p>}<CardActions itemName={item.name} leftAction={<button className={item.equipped ? 'unequip-item' : 'equip-item'} type="button" aria-label={`${item.equipped ? 'Снять' : 'Экипировать'} ${item.name}`} onClick={() => { state.toggleItemEquipped(item.id); setNotice(item.equipped ? `Предмет «${item.name}» снят.` : `Предмет «${item.name}» экипирован.`) }}>{item.equipped ? 'Снять' : 'Экипировать'}</button>} onEdit={() => setEditing(item)} onDuplicate={() => void duplicate(item)} onDelete={() => { if (window.confirm(`Удалить «${item.name}»?`)) { state.deleteItem(item.id); setNotice(`Предмет «${item.name}» удалён.`) } }} /></Card>)}</section> : <EmptyState title="Инвентарь пуст" text="Добавьте первый предмет — он будет сохранён на устройстве." />}
+    {editing && <ItemEditor item={editing === 'new' ? blankItem() : editing} onClose={() => setEditing(null)} />}
+  </div>
 }
 
 function ItemEditor({ item, onClose }: { item: Item; onClose: () => void }) {
@@ -453,7 +475,7 @@ function ItemEditor({ item, onClose }: { item: Item; onClose: () => void }) {
 function CharacterPage() {
   const state = useCharacterStore()
   const fields: Array<[string, string]> = [['race', 'Раса'], ['raceSubtype', 'Подвид'], ['classBackground', 'Класс/предыстория'], ['alignment', 'Мировоззрение'], ['profession', 'Профессия'], ['masteryMagic', 'Мастерство/Магия'], ['age', 'Возраст'], ['height', 'Рост'], ['weight', 'Вес'], ['eyes', 'Глаза'], ['hair', 'Волосы'], ['skin', 'Кожа']]
-  return <div className="page-stack"><section className="profile-card"><Avatar name={state.profile.name} imageId={state.profile.avatarId} className="profile-avatar" /><div><FieldValue label="Имя персонажа" value={state.profile.name} onChange={(value) => state.setProfile('name', value)} editable={state.editing} heading /><p className="quiet">Аватар сохраняется на этом устройстве вместе с листом.</p>{state.editing && <ImageInput value={state.profile.avatarId} onChange={(imageId) => state.setProfile('avatarId', imageId ?? '')} />}</div></section><section className="profile-grid">{fields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</section><section className="collections"><EntryCollection title="Языки" collection="languages" /><EntryCollection title="Владения" collection="proficiencies" /><EntryCollection title="Магические элементы" collection="elements" /></section><section className="text-grid">{[['traits', 'Черты'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['weaknesses', 'Слабости'], ['backstory', 'Предыстория персонажа']].map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</section></div>
+  return <div className="page-stack"><section className="profile-card"><Avatar name={state.profile.name} imageId={state.profile.avatarId} className="profile-avatar" /><div><FieldValue label="Имя персонажа" value={state.profile.name} onChange={(value) => state.setProfile('name', value)} editable={state.editing} heading /><p className="quiet">Аватар сохраняется на этом устройстве вместе с листом.</p>{state.editing && <ImageInput value={state.profile.avatarId} onChange={(imageId) => state.setProfile('avatarId', imageId ?? '')} />}</div></section><section className="profile-grid">{fields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</section><section className="collections"><EntryCollection title="Языки" collection="languages" /><EntryCollection title="Владения" collection="proficiencies" /><EntryCollection title="Магические элементы" collection="elements" /></section><section className="text-grid">{[['traits', 'Черты'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['weaknesses', 'Слабости'], ['backstory', 'Предыстория персонажа'], ['characterNotes', 'Заметки']].map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</section></div>
 }
 
 function EntryCollection({ title, collection }: { title: string; collection: 'languages' | 'proficiencies' | 'elements' }) {
@@ -474,12 +496,18 @@ function NotesPage() {
   const state = useCharacterStore()
   const [editing, setEditing] = useState<Note | 'new' | null>(null)
   const [expanded, setExpanded] = useState<Note | null>(null)
+  const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [notice, setNotice] = useState('')
-  const notes = state.notes.filter((note) => !tagFilter || note.tags.includes(tagFilter))
+  const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU')
+  const notes = state.notes.filter((note) => {
+    const matchesTag = !tagFilter || note.tags.includes(tagFilter)
+    const matchesQuery = !normalizedQuery || [note.title, ...note.tags].some((value) => value.toLocaleLowerCase('ru-RU').includes(normalizedQuery))
+    return matchesTag && matchesQuery
+  })
   const tags = [...new Set(state.notes.flatMap((note) => note.tags))]
 
-  return <div className="page-stack"><section className="page-toolbar"><div><p className="eyebrow">Игровые заметки</p><h2>Заметки сессии</h2></div><button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={16} />Новая заметка</button></section>{tags.length > 0 && <div className="tag-filter"><button type="button" className={!tagFilter ? 'active' : ''} onClick={() => setTagFilter('')}>Все теги</button>{tags.map((tag) => <button type="button" key={tag} className={tagFilter === tag ? 'active' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div>}{notice && <p className="notice" role="status">{notice}</p>}{notes.length ? <section className="notes-grid">{notes.map((note) => <Card key={note.id} className="note-card">{note.imageId && <ImageFrame imageId={note.imageId} label={note.title} className="note-image" />}<button className="note-open" type="button" onClick={() => setExpanded(note)}><p className="eyebrow">{new Date(note.updatedAt).toLocaleDateString('ru-RU')}</p><h3>{note.title || 'Без названия'}</h3><p>{note.body || 'Пустая заметка'}</p></button><div className="note-tags">{note.tags.map((tag) => <button type="button" key={tag} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div><CardActions itemName={note.title || 'заметка'} onEdit={() => setEditing(note)} onDuplicate={() => { const copy: Note = { ...note, id: newId(), title: `${note.title || 'Заметка'} — копия`, imageId: note.imageId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; state.upsertNote(copy); setNotice(`Создана копия заметки «${note.title || 'Без названия'}».`) }} onDelete={() => { if (window.confirm(`Удалить заметку «${note.title || 'Без названия'}»?`)) { state.deleteNote(note.id); setNotice('Заметка удалена.') } }} /></Card>)}</section> : <EmptyState title="Заметок пока нет" text={tagFilter ? 'Для этого тега заметок нет.' : 'Создайте первую заметку для событий, NPC и планов сессии.'} />}{editing && <NoteEditor note={editing === 'new' ? blankNote() : editing} onClose={() => setEditing(null)} />}{expanded && <Modal title={expanded.title || 'Заметка'} onClose={() => setExpanded(null)}>{expanded.imageId && <ImageFrame imageId={expanded.imageId} label={expanded.title} className="detail-image" />}<div className="note-tags">{expanded.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><p className="note-full">{expanded.body || 'Пустая заметка'}</p><button className="button ghost" type="button" onClick={() => { setEditing(expanded); setExpanded(null) }}><Pencil size={16} />Редактировать</button></Modal>}</div>
+  return <div className="page-stack"><section className="page-toolbar"><div><p className="eyebrow">Игровые заметки</p><h2>Заметки сессии</h2></div><button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={16} />Новая заметка</button></section><div className="filters note-search"><input aria-label="Поиск заметок" placeholder="Поиск по заголовку и тегам..." value={query} onChange={(event) => setQuery(event.target.value)} /></div>{tags.length > 0 && <div className="tag-filter"><button type="button" className={!tagFilter ? 'active' : ''} onClick={() => setTagFilter('')}>Все теги</button>{tags.map((tag) => <button type="button" key={tag} className={tagFilter === tag ? 'active' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div>}{notice && <p className="notice" role="status">{notice}</p>}{notes.length ? <section className="notes-grid">{notes.map((note) => <Card key={note.id} className="note-card">{note.imageId && <ImageFrame imageId={note.imageId} label={note.title} className="note-image" />}<button className="note-open" type="button" onClick={() => setExpanded(note)}><p className="eyebrow">{new Date(note.updatedAt).toLocaleDateString('ru-RU')}</p><h3>{note.title || 'Без названия'}</h3><p>{note.body || 'Пустая заметка'}</p></button><div className="note-tags">{note.tags.map((tag) => <button type="button" key={tag} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div><CardActions itemName={note.title || 'заметка'} onEdit={() => setEditing(note)} onDuplicate={() => { const copy: Note = { ...note, id: newId(), title: `${note.title || 'Заметка'} — копия`, imageId: note.imageId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; state.upsertNote(copy); setNotice(`Создана копия заметки «${note.title || 'Без названия'}».`) }} onDelete={() => { if (window.confirm(`Удалить заметку «${note.title || 'Без названия'}»?`)) { state.deleteNote(note.id); setNotice('Заметка удалена.') } }} /></Card>)}</section> : <EmptyState title="Заметок не найдено" text={query || tagFilter ? 'Измените поисковый запрос или выбранный тег.' : 'Создайте первую заметку для событий, NPC и планов сессии.'} />}{editing && <NoteEditor note={editing === 'new' ? blankNote() : editing} onClose={() => setEditing(null)} />}{expanded && <Modal title={expanded.title || 'Заметка'} onClose={() => setExpanded(null)}>{expanded.imageId && <ImageFrame imageId={expanded.imageId} label={expanded.title} className="detail-image" />}<div className="note-tags">{expanded.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><p className="note-full">{expanded.body || 'Пустая заметка'}</p><button className="button ghost" type="button" onClick={() => { setEditing(expanded); setExpanded(null) }}><Pencil size={16} />Редактировать</button></Modal>}</div>
 }
 
 function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
@@ -491,13 +519,23 @@ function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
 function SettingsPage() {
   const state = useCharacterStore()
   const [message, setMessage] = useState('')
-  const exportData = () => {
-    const blob = new Blob([serializeCharacter(snapshot(state))], { type: 'application/json' })
+  const download = (blob: Blob, filename: string) => {
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = 'dnd-mge-character.json'
+    link.download = filename
     link.click()
     URL.revokeObjectURL(link.href)
+  }
+  const exportData = () => download(new Blob([serializeCharacter(snapshot(state))], { type: 'application/json' }), 'dnd-mge-character.json')
+  const exportBackup = async () => {
+    setMessage('Создаю резервную копию с изображениями…')
+    try {
+      const backup = await createCharacterBackup(snapshot(state))
+      download(backup.blob, 'dnd-mge-character-with-images.zip')
+      setMessage(`Резервная копия создана. Добавлено изображений: ${backup.imageCount}.`)
+    } catch {
+      setMessage('Не удалось создать резервную копию с изображениями.')
+    }
   }
   const importData = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget
@@ -511,7 +549,22 @@ function SettingsPage() {
     }
     input.value = ''
   }
-  return <div className="page-stack settings-page"><Card><p className="eyebrow">Оформление</p><h2>Тема интерфейса</h2><div className="theme-options"><button type="button" className={state.settings.themeMode === 'dark' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'dark'} onClick={() => state.setSetting('themeMode', 'dark')}><Moon size={17} />Тёмная</button><button type="button" className={state.settings.themeMode === 'light' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'light'} onClick={() => state.setSetting('themeMode', 'light')}><Sun size={17} />Светлая</button></div><p className="setting-label">Акцентный цвет</p><div className="accent-options">{accentOptions.map(([value, label]) => <button key={value} type="button" className={`accent-swatch ${value} ${state.settings.accentColor === value ? 'active' : ''}`} aria-label={`Акцент: ${label}`} aria-pressed={state.settings.accentColor === value} onClick={() => state.setSetting('accentColor', value)}><span />{label}</button>)}</div></Card><Card><p className="eyebrow">Опыт и уровень</p><h2>Правило повышения</h2><p className="quiet">Максимальный уровень — 25. На каждом уровне показывается опыт, необходимый для следующего.</p><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'carry'} onChange={() => state.setSetting('levelUpBehavior', 'carry')} />Переносить избыток опыта</label><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'reset'} onChange={() => state.setSetting('levelUpBehavior', 'reset')} />Сбрасывать опыт в ноль</label><label className="check"><input type="checkbox" checked={state.settings.allowNegativeMana} onChange={(event) => state.setSetting('allowNegativeMana', event.target.checked)} />Разрешить отрицательную ману</label></Card><Card><p className="eyebrow">Данные</p><h2>Резервная копия</h2><p className="quiet">JSON содержит данные листа. Загруженные изображения остаются в этом браузере и не входят в JSON; история бросков также не экспортируется.</p><div className="button-row"><button className="button primary" type="button" onClick={exportData}><Download size={16} />Экспорт JSON</button><label className="button ghost"><Upload size={16} />Импорт JSON<input hidden type="file" accept="application/json" onChange={importData} /></label><button className="button ghost" type="button" onClick={() => { void db.snapshots.put({ id: 'character', value: snapshot(state) }); setMessage('Текущий лист сохранён локально в этом браузере.') }}>Сохранить локально</button></div><button className="danger" type="button" onClick={() => { if (window.confirm('Сбросить лист к исходным данным? Это не удаляет изображения из IndexedDB.')) { state.reset(); setMessage('Восстановлены исходные данные.') } }}>Сбросить к исходным данным</button>{message && <p className="notice" role="status">{message}</p>}</Card></div>
+  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    setMessage('Восстанавливаю лист и изображения…')
+    try {
+      const backup = await restoreCharacterBackup(file)
+      state.setCharacter(backup.character)
+      state.setEditing(false)
+      setMessage(`Резервная копия восстановлена. Изображений: ${backup.imageCount}.`)
+    } catch {
+      setMessage('Не удалось импортировать ZIP: выберите резервную копию, созданную этим сайтом.')
+    }
+    input.value = ''
+  }
+  return <div className="page-stack settings-page"><Card><p className="eyebrow">Оформление</p><h2>Тема интерфейса</h2><div className="theme-options"><button type="button" className={state.settings.themeMode === 'dark' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'dark'} onClick={() => state.setSetting('themeMode', 'dark')}><Moon size={17} />Тёмная</button><button type="button" className={state.settings.themeMode === 'light' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'light'} onClick={() => state.setSetting('themeMode', 'light')}><Sun size={17} />Светлая</button></div><p className="setting-label">Акцентный цвет</p><div className="accent-options">{accentOptions.map(([value, label]) => <button key={value} type="button" className={`accent-swatch ${value} ${state.settings.accentColor === value ? 'active' : ''}`} aria-label={`Акцент: ${label}`} aria-pressed={state.settings.accentColor === value} onClick={() => state.setSetting('accentColor', value)}><span />{label}</button>)}</div></Card><Card><p className="eyebrow">Опыт и уровень</p><h2>Правило повышения</h2><p className="quiet">Максимальный уровень — 25. На каждом уровне показывается опыт, необходимый для следующего.</p><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'carry'} onChange={() => state.setSetting('levelUpBehavior', 'carry')} />Переносить избыток опыта</label><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'reset'} onChange={() => state.setSetting('levelUpBehavior', 'reset')} />Сбрасывать опыт в ноль</label><label className="check"><input type="checkbox" checked={state.settings.allowNegativeMana} onChange={(event) => state.setSetting('allowNegativeMana', event.target.checked)} />Разрешить отрицательную ману</label></Card><Card><p className="eyebrow">Данные</p><h2>Резервная копия</h2><p className="quiet">ZIP содержит лист и все связанные фотографии. При импорте аватар и изображения карточек автоматически возвращаются на прежние места. JSON оставлен как облегчённый формат без фотографий.</p><div className="button-row"><button className="button primary" type="button" onClick={() => void exportBackup()}><FileArchive size={16} />Экспорт ZIP с фото</button><label className="button primary"><Upload size={16} />Импорт ZIP с фото<input hidden type="file" accept=".zip,application/zip" onChange={importBackup} /></label></div><div className="button-row secondary-backup-actions"><button className="button ghost" type="button" onClick={exportData}><Download size={16} />Экспорт JSON без фото</button><label className="button ghost"><Upload size={16} />Импорт JSON<input hidden type="file" accept="application/json" onChange={importData} /></label><button className="button ghost" type="button" onClick={() => { void db.snapshots.put({ id: 'character', value: snapshot(state) }); setMessage('Текущий лист сохранён локально в этом браузере.') }}>Сохранить локально</button></div><button className="danger" type="button" onClick={() => { if (window.confirm('Сбросить лист к исходным данным? Это не удаляет изображения из IndexedDB.')) { state.reset(); setMessage('Восстановлены исходные данные.') } }}>Сбросить к исходным данным</button>{message && <p className="notice" role="status">{message}</p>}</Card></div>
 }
 
 function DicePanel({ onClose }: { onClose: () => void }) {
