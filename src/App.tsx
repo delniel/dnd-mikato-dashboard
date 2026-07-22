@@ -1,14 +1,19 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
-import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, Copy, Dices, Download, FileArchive, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Trash2, Upload, UserRound, WandSparkles, X, type LucideIcon } from 'lucide-react'
-import { createCharacterBackup, restoreCharacterBackup } from './backup'
-import { cloneImage, db, loadCharacter, loadImage, saveCharacter, saveImage } from './db'
-import { manaRecoveryAmount, serializeCharacter, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronDown, Copy, Dices, Download, FileArchive, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Swords, Trash2, Upload, UserRound, Users, WandSparkles, X, type LucideIcon } from 'lucide-react'
+import { createJsonBackup, createLibraryBackup, materializeImportedCharacter, parseJsonBackup, restoreLibraryBackup, type BackupScope, type PreparedBackupImport } from './backup'
+import { cloneImage, loadImage, loadImages, loadLibrary, removeImages, saveImage, saveImages, saveLibrary, type ImageRecord } from './db'
+import { createBlankCharacter } from './data'
+import { manaRecoveryAmount, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
+import { calculateCombatState, combatCategories, combatCategoryLabels, combatDurationLabels, combatDurationTypes, combatOperationLabels, combatOperationSymbols, combatOperations, describeCombatDuration, formatCombatNumber, type CombatCalculation, type CombatCategory, type CombatEffect, type CombatModifier, type CombatOperation } from './combat'
+import { addCharacter, characterForActivation, collectCharacterImageIds, createCharacterLibrary, createCharacterRecord, deleteCharacter, getActiveCharacter, renameCharacter, sanitizeFilename, selectCharacter as selectLibraryCharacter, syncActiveCharacter, type CharacterLibrary, type CharacterRecord } from './library'
+import { librarySnapshot, useLibraryStore } from './libraryStore'
 import { useCharacterStore } from './store'
 
-type Page = 'Обзор' | 'Характеристики' | 'Заклинания и Способности' | 'Навыки +' | 'Инвентарь' | 'Персонаж' | 'Заметки' | 'Настройки'
+type Page = 'Обзор' | 'Бой' | 'Характеристики' | 'Заклинания и Способности' | 'Навыки +' | 'Инвентарь' | 'Персонаж' | 'Заметки' | 'Настройки'
 
 const pages: { page: Page; icon: LucideIcon }[] = [
   { page: 'Обзор', icon: Shield },
+  { page: 'Бой', icon: Swords },
   { page: 'Характеристики', icon: Sparkles },
   { page: 'Заклинания и Способности', icon: WandSparkles },
   { page: 'Навыки +', icon: Star },
@@ -39,6 +44,11 @@ const passiveSenseLabels: Record<string, string> = {
   Проницательность: 'Пассивная Проницательность',
   Анализ: 'Пассивный Анализ',
 }
+const combatEffectSectionTitles: Record<CombatCategory, string> = {
+  positive: 'Положительные эффекты',
+  negative: 'Отрицательные эффекты',
+  special: 'Особые эффекты',
+}
 const baseDice = ['d2', 'd4', 'd6', 'd8', 'd10', 'd12', 'd16', 'd20', 'd100']
 const newId = () => crypto.randomUUID()
 const noValue = (value: string) => value.trim() || 'Не указано'
@@ -46,23 +56,40 @@ const noValue = (value: string) => value.trim() || 'Не указано'
 function App() {
   const state = useCharacterStore()
   const setCharacter = useCharacterStore((store) => store.setCharacter)
+  const library = useLibraryStore()
+  const replaceLibrary = useLibraryStore((store) => store.replaceLibrary)
   const [page, setPage] = useState<Page>('Обзор')
   const [hydrated, setHydrated] = useState(false)
+  const [storageReady, setStorageReady] = useState(false)
+  const [storageError, setStorageError] = useState('')
   const [diceOpen, setDiceOpen] = useState(false)
+  const [charactersOpen, setCharactersOpen] = useState(false)
+  const [libraryBusy, setLibraryBusy] = useState(false)
+  const [libraryNotice, setLibraryNotice] = useState('')
   const saved = useMemo(() => snapshot(state), [state])
 
   useEffect(() => {
-    loadCharacter()
+    loadLibrary()
       .then((record) => {
-        if (record) setCharacter(record.value)
+        const next = record?.value ?? createCharacterLibrary(snapshot(useCharacterStore.getState()))
+        replaceLibrary(next)
+        const active = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null
+        if (active) setCharacter(active)
+        setStorageReady(true)
         setHydrated(true)
       })
-      .catch(() => setHydrated(true))
-  }, [setCharacter])
+      .catch(() => {
+        setStorageError('Не удалось прочитать локальные данные. Автосохранение отключено, чтобы не перезаписать существующую библиотеку.')
+        setHydrated(true)
+      })
+  }, [replaceLibrary, setCharacter])
 
   useEffect(() => {
-    if (hydrated) void saveCharacter(saved)
-  }, [hydrated, saved])
+    if (!hydrated || !storageReady) return
+    const next = syncActiveCharacter(librarySnapshot(), saved)
+    replaceLibrary(next)
+    void saveLibrary(next).catch(() => setLibraryNotice('Не удалось сохранить библиотеку персонажей. Предыдущая копия не удалена.'))
+  }, [hydrated, replaceLibrary, saved, storageReady])
 
   useEffect(() => {
     document.documentElement.dataset.theme = state.settings.themeMode
@@ -74,9 +101,105 @@ function App() {
     setPage(nextPage)
   }
 
+  const persistCurrent = async (): Promise<CharacterLibrary> => {
+    if (!storageReady) throw new Error('Локальное хранилище недоступно')
+    const next = syncActiveCharacter(librarySnapshot(), snapshot(useCharacterStore.getState()))
+    await saveLibrary(next)
+    replaceLibrary(next)
+    return next
+  }
+
+  const activate = async (id: string) => {
+    if (id === librarySnapshot().activeCharacterId) return
+    setLibraryBusy(true)
+    try {
+      const persisted = await persistCurrent()
+      const next = selectLibraryCharacter(persisted, id)
+      const character = characterForActivation(next, id)
+      if (!character) return
+      await saveLibrary(next)
+      replaceLibrary(next); setCharacter(character); state.setEditing(false); setLibraryNotice('Персонаж переключён.')
+    } catch { setLibraryNotice('Не удалось переключить персонажа: текущие данные оставлены открытыми.') }
+    finally { setLibraryBusy(false) }
+  }
+
+  const createNewCharacter = async () => {
+    if (libraryBusy) return
+    const name = window.prompt('Имя нового персонажа:', 'Новый персонаж')?.trim()
+    if (!name) return
+    setLibraryBusy(true)
+    try {
+      const persisted = await persistCurrent()
+      const next = addCharacter(persisted, createCharacterRecord(createBlankCharacter(), { name }))
+      await saveLibrary(next); replaceLibrary(next)
+      const character = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null
+      if (character) setCharacter(character)
+      setLibraryNotice(`Создан персонаж «${name}».`)
+    } catch { setLibraryNotice('Не удалось создать персонажа.') }
+    finally { setLibraryBusy(false) }
+  }
+
+  const renameManagedCharacter = async (id: string) => {
+    const source = librarySnapshot().characters[id]
+    if (!source) return
+    const name = window.prompt('Новое имя персонажа:', source.name)?.trim()
+    if (!name) return
+    setLibraryBusy(true)
+    try {
+      const persisted = await persistCurrent()
+      const next = renameCharacter(persisted, id, name)
+      await saveLibrary(next); replaceLibrary(next)
+      if (next.activeCharacterId === id) { const data = characterForActivation(next, id); if (data) setCharacter(data) }
+      setLibraryNotice(`Персонаж переименован в «${name}».`)
+    } catch { setLibraryNotice('Не удалось переименовать персонажа.') }
+    finally { setLibraryBusy(false) }
+  }
+
+  const duplicateManagedCharacter = async (id: string) => {
+    if (libraryBusy) return
+    setLibraryBusy(true)
+    try {
+      const persisted = await persistCurrent(); const source = persisted.characters[id]
+      if (!source) return
+      const ids = collectCharacterImageIds(source.data); const records = (await loadImages(ids)).filter((record): record is NonNullable<typeof record> => Boolean(record))
+      const copySource: CharacterRecord = { ...source, name: `${source.name} — копия`, data: { ...structuredClone(source.data), profile: { ...source.data.profile, name: `${source.name} — копия` } } }
+      const materialized = materializeImportedCharacter(copySource, records)
+      if (materialized.images.length) await saveImages(materialized.images)
+      const next = addCharacter(persisted, materialized.character)
+      await saveLibrary(next); replaceLibrary(next)
+      const data = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null
+      if (data) setCharacter(data)
+      setLibraryNotice(`Создана независимая копия «${source.name}».`)
+    } catch { setLibraryNotice('Не удалось дублировать персонажа.') }
+    finally { setLibraryBusy(false) }
+  }
+
+  const deleteManagedCharacter = async (id: string) => {
+    if (libraryBusy) return
+    const source = librarySnapshot().characters[id]
+    if (!source || !window.confirm(`Удалить персонажа “${source.name}”? Это действие удалит его данные и локальные изображения.`)) return
+    setLibraryBusy(true)
+    try {
+      const persisted = await persistCurrent()
+      const currentSource = persisted.characters[id]
+      if (!currentSource) return
+      const removedIds = collectCharacterImageIds(currentSource.data)
+      const next = deleteCharacter(persisted, id)
+      await saveLibrary(next); replaceLibrary(next)
+      const data = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null
+      if (data) setCharacter(data)
+      setLibraryNotice(`Персонаж «${source.name}» удалён.`)
+      const used = new Set(Object.values(next.characters).flatMap((character) => collectCharacterImageIds(character.data)))
+      void removeImages(removedIds.filter((imageId) => !used.has(imageId))).catch(() => setLibraryNotice(`Персонаж «${source.name}» удалён, но часть неиспользуемых изображений очистить не удалось.`))
+    } catch { setLibraryNotice('Не удалось удалить персонажа. Существующая библиотека сохранена.') }
+    finally { setLibraryBusy(false) }
+  }
+
   const content = page === 'Обзор'
     ? <Overview />
-    : page === 'Характеристики'
+    : page === 'Бой'
+      ? <CombatPage />
+      : page === 'Характеристики'
       ? <Characteristics />
       : page === 'Заклинания и Способности'
         ? <SpellsPage />
@@ -88,7 +211,58 @@ function App() {
               ? <CharacterPage />
               : page === 'Заметки'
                 ? <NotesPage />
-                : <SettingsPage />
+                : <SettingsPage persistCurrent={persistCurrent} applySingleImport={async (prepared, replace) => {
+                    const current = await persistCurrent(); const source = prepared.character
+                    if (!source) throw new Error('Нет персонажа')
+                    const targetId = replace ? current.activeCharacterId : crypto.randomUUID()
+                    if (!targetId) throw new Error('Нет активного персонажа')
+                    const materialized = materializeImportedCharacter(source, prepared.images, targetId)
+                    materialized.character.data.settings = structuredClone(current.settings)
+                    if (materialized.images.length) await saveImages(materialized.images)
+                    const replacedImageIds = replace && current.activeCharacterId ? collectCharacterImageIds(current.characters[current.activeCharacterId].data) : []
+                    let next = replace && current.activeCharacterId
+                      ? { ...current, characters: { ...current.characters, [current.activeCharacterId]: materialized.character } }
+                      : addCharacter(current, materialized.character)
+                    next = { ...next, activeCharacterId: targetId }
+                    await saveLibrary(next); replaceLibrary(next); const data = characterForActivation(next, targetId); if (data) setCharacter(data)
+                    const used = new Set(Object.values(next.characters).flatMap((character) => collectCharacterImageIds(character.data)))
+                    await removeImages(replacedImageIds.filter((id) => !used.has(id))).catch(() => undefined)
+                  }} applyCollectionImport={async (prepared, mode, conflicts) => {
+                    const incoming = prepared.library; if (!incoming) throw new Error('Нет коллекции')
+                    const current = await persistCurrent(); let next = mode === 'replace' ? { ...incoming, characters: {}, characterOrder: [], activeCharacterId: null } : current
+                    const newImages: ImageRecord[] = []; const replacedImageIds: string[] = mode === 'replace' ? Object.values(current.characters).flatMap((character) => collectCharacterImageIds(character.data)) : []
+                    for (const oldId of incoming.characterOrder) {
+                      const source = incoming.characters[oldId]; if (!source) continue
+                      const exists = Boolean(next.characters[oldId])
+                      if (mode === 'merge' && exists && conflicts === 'skip') continue
+                      const targetId = mode === 'merge' && exists && conflicts === 'copy' ? crypto.randomUUID() : oldId
+                      if (mode === 'merge' && exists && conflicts === 'replace') replacedImageIds.push(...collectCharacterImageIds(next.characters[oldId].data))
+                      const ownedImages = prepared.images.filter((image) => !image.characterId || image.characterId === oldId)
+                      const materialized = materializeImportedCharacter(source, ownedImages, targetId, mode === 'replace' || (exists && conflicts === 'replace'))
+                      materialized.character.data.settings = structuredClone(next.settings)
+                      newImages.push(...materialized.images)
+                      next = { ...next, characters: { ...next.characters, [targetId]: materialized.character }, characterOrder: next.characterOrder.includes(targetId) ? next.characterOrder : [...next.characterOrder, targetId] }
+                    }
+                    next = { ...next, settings: mode === 'replace' ? incoming.settings : current.settings, activeCharacterId: mode === 'replace' ? (incoming.activeCharacterId && next.characters[incoming.activeCharacterId] ? incoming.activeCharacterId : next.characterOrder[0] ?? null) : current.activeCharacterId }
+                    if (newImages.length) await saveImages(newImages)
+                    await saveLibrary(next); replaceLibrary(next)
+                    const data = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null; if (data) setCharacter(data)
+                    const used = new Set(Object.values(next.characters).flatMap((character) => collectCharacterImageIds(character.data)))
+                    await removeImages(replacedImageIds.filter((id) => !used.has(id))).catch(() => undefined)
+                  }} resetCurrent={async () => {
+                    const current = await persistCurrent(); const id = current.activeCharacterId; if (!id) return
+                    const source = current.characters[id]; const removed = collectCharacterImageIds(source.data)
+                    const reset = { ...createCharacterRecord(undefined, { id, name: source.name }), createdAt: source.createdAt }
+                    const next = { ...current, characters: { ...current.characters, [id]: reset } }; await saveLibrary(next); replaceLibrary(next)
+                    const data = characterForActivation(next, id); if (data) setCharacter(data)
+                    const used = new Set(Object.values(next.characters).flatMap((character) => collectCharacterImageIds(character.data)))
+                    await removeImages(removed.filter((imageId) => !used.has(imageId))).catch(() => undefined)
+                  }} resetAll={async () => {
+                    const current = await persistCurrent(); const removed = Object.values(current.characters).flatMap((character) => collectCharacterImageIds(character.data))
+                    const next = createCharacterLibrary(); await saveLibrary(next); replaceLibrary(next)
+                    const data = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null; if (data) setCharacter(data)
+                    await removeImages(removed).catch(() => undefined)
+                  }} />
 
   return (
     <main className="app-shell">
@@ -99,19 +273,19 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Лист персонажа · Микато Edition</p>
+            <p className="eyebrow">Лист персонажа · <a className="edition-link" href="https://dnd-mikato-edition.fandom.com/ru" target="_blank" rel="noreferrer">Микато Edition</a></p>
             <h1>{page}</h1>
           </div>
-          {editablePages.has(page) && <div className="top-actions">
-            <span className={state.editing ? 'mode-pill edit' : 'mode-pill'}>{state.editing ? 'Режим редактирования' : 'Игровой режим'}</span>
-            <ModeButton />
-          </div>}
+          <div className="top-actions"><CharacterSwitcher library={library} busy={libraryBusy} onSwitch={activate} onManage={() => setCharactersOpen(true)} onCreate={createNewCharacter} />{editablePages.has(page) && <><span className={state.editing ? 'mode-pill edit' : 'mode-pill'}>{state.editing ? 'Режим редактирования' : 'Игровой режим'}</span><ModeButton /></>}</div>
         </header>
-        {content}
+        {storageError && <p className="notice error-notice library-notice" role="alert">{storageError}</p>}
+        {libraryNotice && <p className="notice library-notice" role="status">{libraryNotice}</p>}
+        {!hydrated ? <EmptyState title="Загрузка библиотеки…" text="Восстанавливаем локальные данные персонажей." /> : library.activeCharacterId ? <div key={library.activeCharacterId}>{content}</div> : <EmptyState title="Нет персонажей" text="Создайте первого персонажа, чтобы открыть лист." />}
       </section>
       <nav className="bottom-nav"><Navigation active={page} onSelect={selectPage} compact /></nav>
       <button className="dice-fab" type="button" aria-label="Открыть бросок кубиков" onClick={() => setDiceOpen(true)}><Dices /></button>
       {diceOpen && <DicePanel onClose={() => setDiceOpen(false)} />}
+      {charactersOpen && <CharacterManager library={library} busy={libraryBusy} onClose={() => setCharactersOpen(false)} onOpen={(id) => { void activate(id); setCharactersOpen(false) }} onCreate={() => void createNewCharacter()} onRename={(id) => void renameManagedCharacter(id)} onDuplicate={(id) => void duplicateManagedCharacter(id)} onDelete={(id) => void deleteManagedCharacter(id)} />}
     </main>
   )
 }
@@ -127,6 +301,7 @@ function snapshot(state: ReturnType<typeof useCharacterStore.getState>): Charact
     senses: state.senses,
     favorites: state.favorites,
     notes: state.notes,
+    combatEffects: state.combatEffects,
     settings: state.settings,
     recentAction: state.recentAction,
     characteristics: state.characteristics,
@@ -150,6 +325,45 @@ function Navigation({ active, onSelect, compact = false }: { active: Page; onSel
   return <div className={compact ? 'nav compact' : 'nav'}>{pages.map(({ page, icon: Icon }) => <button key={page} type="button" className={active === page ? 'nav-item active' : 'nav-item'} onClick={() => onSelect(page)} aria-current={active === page ? 'page' : undefined}><Icon size={compact ? 18 : 19} /><span>{page}</span></button>)}</div>
 }
 
+function CharacterSwitcher({ library, busy, onSwitch, onManage, onCreate }: { library: CharacterLibrary; busy: boolean; onSwitch: (id: string) => Promise<void>; onManage: () => void; onCreate: () => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const active = getActiveCharacter(library)
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setOpen(false); triggerRef.current?.focus() } }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    rootRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeOnEscape) }
+  }, [open])
+  return <div className="character-switcher" ref={rootRef}>
+    <button ref={triggerRef} className="character-switcher-button" type="button" aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={() => setOpen(!open)}>{active ? <><Avatar imageId={active.data.profile.avatarId} name={active.name} className="switcher-avatar" /><span><strong>{active.name}</strong><small>{active.data.profile.classBackground || `Уровень ${active.data.level}`}</small></span></> : <><Users size={18} /><span><strong>Нет персонажа</strong><small>Создайте первого</small></span></>}<ChevronDown size={16} /></button>
+    {open && <div className="character-menu" role="menu">{library.characterOrder.map((id) => { const character = library.characters[id]; if (!character) return null; return <button type="button" role="menuitem" className={id === library.activeCharacterId ? 'active' : ''} key={id} onClick={() => { setOpen(false); void onSwitch(id) }}><Avatar imageId={character.data.profile.avatarId} name={character.name} className="menu-avatar" /><span><strong>{character.name}</strong><small>{character.data.profile.classBackground || `Уровень ${character.data.level}`} · HP {character.data.resources.hp.current}/{character.data.resources.hp.max}</small></span>{id === library.activeCharacterId && <b>Открыт</b>}</button> })}<div className="character-menu-actions"><button type="button" role="menuitem" onClick={() => { setOpen(false); onManage() }}><Users size={15} />Управление персонажами</button><button type="button" role="menuitem" onClick={() => { setOpen(false); void onCreate() }}><Plus size={15} />Создать персонажа</button></div></div>}
+  </div>
+}
+
+function CharacterManager({ library, busy, onClose, onOpen, onCreate, onRename, onDuplicate, onDelete }: { library: CharacterLibrary; busy: boolean; onClose: () => void; onOpen: (id: string) => void; onCreate: () => void; onRename: (id: string) => void; onDuplicate: (id: string) => void; onDelete: (id: string) => void }) {
+  const [message, setMessage] = useState('')
+  const exportCharacter = async (id: string) => {
+    const character = library.characters[id]; if (!character) return
+    setMessage('Создаю ZIP…')
+    try {
+      const scoped = { ...library, activeCharacterId: id }
+      const backup = await createLibraryBackup(scoped, 'current')
+      downloadBlob(backup.blob, `mikato-character-${sanitizeFilename(character.name)}-${new Date().toISOString().slice(0, 10)}.zip`)
+      setMessage(`Экспортирован «${character.name}», изображений: ${backup.imageCount}.`)
+    } catch { setMessage('Не удалось экспортировать персонажа.') }
+  }
+  return <Modal title="Персонажи" onClose={onClose}><div className="manager-heading"><p className="quiet">Каждый лист, его ресурсы, заметки и изображения сохраняются независимо.</p><button className="button primary" type="button" disabled={busy} onClick={onCreate}><Plus size={16} />Создать персонажа</button></div>{library.characterOrder.length ? <div className="character-manager-grid">{library.characterOrder.map((id) => { const character = library.characters[id]; if (!character) return null; return <Card className={id === library.activeCharacterId ? 'character-manager-card active' : 'character-manager-card'} key={id}><div className="character-manager-main"><Avatar imageId={character.data.profile.avatarId} name={character.name} /><div><p className="eyebrow">{id === library.activeCharacterId ? 'Сейчас открыт' : 'Персонаж'}</p><h3>{character.name}</h3><p>{character.data.profile.classBackground || 'Класс не указан'} · уровень {character.data.level}</p><small>HP {character.data.resources.hp.current}/{character.data.resources.hp.max} · обновлён {new Date(character.updatedAt).toLocaleString('ru-RU')}</small></div></div><div className="character-manager-actions"><button className="button primary small" type="button" disabled={busy || id === library.activeCharacterId} onClick={() => onOpen(id)}>Открыть</button><button className="button ghost small" type="button" onClick={() => onRename(id)}><Pencil size={14} />Переименовать</button><button className="button ghost small" type="button" disabled={busy} onClick={() => onDuplicate(id)}><Copy size={14} />Дублировать</button><button className="button ghost small" type="button" disabled={busy} onClick={() => void exportCharacter(id)}><FileArchive size={14} />Экспортировать</button><button className="button ghost small delete-character" type="button" onClick={() => onDelete(id)}><Trash2 size={14} />Удалить</button></div></Card> })}</div> : <EmptyState title="Персонажей пока нет" text="Создайте первого персонажа, чтобы начать работу." />}{message && <p className="notice" role="status">{message}</p>}</Modal>
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = filename; link.click(); URL.revokeObjectURL(link.href)
+}
+
 function ModeButton() {
   const { editing, setEditing } = useCharacterStore()
   return <button type="button" className={editing ? 'button primary' : 'button ghost'} onClick={() => setEditing(!editing)}>{editing ? <><Save size={16} />Сохранить и закрыть</> : <><Pencil size={16} />Редактировать</>}</button>
@@ -160,13 +374,29 @@ function Card({ children, className = '' }: { children: ReactNode; className?: s
 }
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null)
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose }, [onClose])
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    const focusable = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])]
+    focusable()[0]?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { closeRef.current(); return }
+      if (event.key !== 'Tab') return
+      const entries = focusable(); if (!entries.length) return
+      const first = entries[0]; const last = entries[entries.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+    return () => { window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = previousOverflow; previousFocus?.focus() }
+  }, [])
 
-  return <div className="drawer-backdrop" onMouseDown={onClose}><section className="drawer editor-drawer" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><button className="close" type="button" aria-label="Закрыть" onClick={onClose}><X /></button><h2>{title}</h2>{children}</section></div>
+  return <div className="drawer-backdrop" onMouseDown={onClose}><section ref={dialogRef} className="drawer editor-drawer" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><button className="close" type="button" aria-label="Закрыть" onClick={onClose}><X /></button><h2>{title}</h2>{children}</section></div>
 }
 
 function useImageUrl(imageId?: string) {
@@ -212,7 +442,7 @@ function TextValue({ label, value, onChange, editable }: { label: string; value:
 
 function Counter({ label, value, onChange, onAdjust, steps = [1] }: { label: string; value: number; onChange: (value: number) => void; onAdjust?: (delta: number) => void; steps?: number[] }) {
   const adjustable = Boolean(onAdjust)
-  return <div className={adjustable ? `counter ${steps.length > 1 ? 'counter-steps' : ''}` : 'counter input-only'}>{adjustable && [...steps].reverse().map((step) => <button key={`minus-${step}`} type="button" aria-label={`${label}: минус ${step}`} onClick={() => onAdjust?.(-step)}>−{step}</button>)}<input aria-label={label} type="number" value={Number.isFinite(value) ? value : 0} onChange={(event) => onChange(Number(event.target.value))} />{adjustable && steps.map((step) => <button key={`plus-${step}`} type="button" aria-label={`${label}: плюс ${step}`} onClick={() => onAdjust?.(step)}>+{step}</button>)}</div>
+  return <div className={adjustable ? `counter ${steps.length > 1 ? `counter-steps counter-steps-${steps.length}` : ''}` : 'counter input-only'}>{adjustable && [...steps].reverse().map((step) => <button key={`minus-${step}`} type="button" aria-label={`${label}: минус ${step}`} onClick={() => onAdjust?.(-step)}>−{step}</button>)}<input aria-label={label} type="number" value={Number.isFinite(value) ? value : 0} onChange={(event) => onChange(Number(event.target.value))} />{adjustable && steps.map((step) => <button key={`plus-${step}`} type="button" aria-label={`${label}: плюс ${step}`} onClick={() => onAdjust?.(step)}>+{step}</button>)}</div>
 }
 
 function Progress({ value, max, color }: { value: number; max: number; color: string }) {
@@ -244,8 +474,8 @@ function Overview() {
     </section>
 
     <section className="resource-grid">
-      <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" />
-      <ResourceCard title="Мана" caption="Энергия" color="mana" resourceKey="mana" />
+      <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" editMaximum />
+      <ResourceCard title="Мана" caption="Энергия" color="mana" resourceKey="mana" editMaximum />
       <ResourceCard title="Превосходство" caption="Ресурс" color="bone" resourceKey="superiority" />
     </section>
 
@@ -267,7 +497,7 @@ function Overview() {
   </div>
 }
 
-function ResourceCard({ title, caption, color, resourceKey }: { title: string; caption: string; color: string; resourceKey: ResourceKey }) {
+function ResourceCard({ title, caption, color, resourceKey, interactive = false, editMaximum = false }: { title: string; caption: string; color: string; resourceKey: ResourceKey; interactive?: boolean; editMaximum?: boolean }) {
   const state = useCharacterStore()
   const resource = state.resources[resourceKey]
   const dieType = state.resources.superiority.dieType ?? ''
@@ -277,10 +507,10 @@ function ResourceCard({ title, caption, color, resourceKey }: { title: string; c
       ? <FieldValue label="Кость превосходства" value={dieType} onChange={state.setSuperiorityDie} editable />
       : <p className="resource-detail"><span>Кость превосходства</span><strong>{noValue(dieType)}</strong></p>)}
     {resourceKey === 'hp' ? <HpProgress current={resource.current} temporary={resource.temporary ?? 0} max={resource.max} /> : <Progress value={resource.current} max={resource.max} color={color} />}
-    <Counter label={`${title}: текущее значение`} value={resource.current} onChange={(value) => state.setResource(resourceKey, value)} onAdjust={(delta) => state.adjust(resourceKey, delta)} steps={resourceKey === 'hp' || resourceKey === 'mana' ? [1, 5, 10] : [1]} />
-    {resourceKey === 'mana' && <button className="button ghost resource-action" type="button" disabled={manaRecoveryAmount(state.profile.manaRecovery ?? '') <= 0 || resource.current >= resource.max} onClick={state.recoverMana}><ArchiveRestore size={16} />Восстановление маны (+{manaRecoveryAmount(state.profile.manaRecovery ?? '')})</button>}
-    {resourceKey === 'hp' && <div className="temporary-hp"><span>Временные хиты</span><Counter label="Временные хиты" value={resource.temporary ?? 0} onChange={state.setTemporaryHp} onAdjust={(delta) => state.setTemporaryHp((resource.temporary ?? 0) + delta)} steps={[1, 5, 10]} /></div>}
-    {state.editing && <div className="resource-max"><FieldValue label={`${title}: максимум`} value={String(resource.max)} onChange={(value) => state.setResourceMax(resourceKey, Number(value))} editable /></div>}
+    {interactive && <Counter label={`${title}: текущее значение`} value={resource.current} onChange={(value) => state.setResource(resourceKey, value)} onAdjust={(delta) => state.adjust(resourceKey, delta)} steps={resourceKey === 'superiority' ? [1] : [1, 5, 10]} />}
+    {interactive && resourceKey === 'mana' && <button className="button ghost resource-action" type="button" disabled={manaRecoveryAmount(state.profile.manaRecovery ?? '') <= 0 || resource.current >= resource.max} onClick={state.recoverMana}><ArchiveRestore size={16} />Восстановление маны (+{manaRecoveryAmount(state.profile.manaRecovery ?? '')})</button>}
+    {interactive && resourceKey === 'hp' && <div className="temporary-hp"><span>Временные хиты</span><Counter label="Временные хиты" value={resource.temporary ?? 0} onChange={state.setTemporaryHp} onAdjust={(delta) => state.setTemporaryHp((resource.temporary ?? 0) + delta)} steps={[1, 5, 10]} /></div>}
+    {editMaximum && state.editing && <div className="resource-max"><FieldValue label={`${title}: максимум`} value={String(resource.max)} onChange={(value) => state.setResourceMax(resourceKey, Number(value))} editable /></div>}
   </Card>
 }
 
@@ -292,6 +522,181 @@ function OverviewStats({ title, values }: { title: string; values: Array<[string
 function HpProgress({ current, temporary, max }: { current: number; temporary: number; max: number }) {
   const total = Math.max(1, max + temporary)
   return <div className="progress hp-progress" aria-label={`${current} обычных и ${temporary} временных хитов из ${max}`}><span className="hp" style={{ width: `${Math.max(0, current) / total * 100}%` }} /><span className="temporary" style={{ width: `${Math.max(0, temporary) / total * 100}%` }} /></div>
+}
+
+function CombatPage() {
+  const state = useCharacterStore()
+  const calculations = calculateCombatState(state)
+  const combatCalculations = calculations.filter((calculation) => calculation.target.group === 'combat')
+  const abilityCalculations = state.characteristics.map((characteristic) => ({
+    id: characteristic.id,
+    name: characteristic.name,
+    calculations: {
+      score: calculations.find((calculation) => calculation.target.id === `characteristic.${characteristic.id}.score`),
+      check: calculations.find((calculation) => calculation.target.id === `characteristic.${characteristic.id}.check`),
+      save: calculations.find((calculation) => calculation.target.id === `characteristic.${characteristic.id}.save`),
+    },
+  }))
+  const [editingEffect, setEditingEffect] = useState<CombatEffect | 'new' | null>(null)
+  const [calculationDetail, setCalculationDetail] = useState<CombatCalculation | null>(null)
+  const [spellDetail, setSpellDetail] = useState<Spell | null>(null)
+  const [skillDetail, setSkillDetail] = useState<Skill | null>(null)
+  const [itemDetail, setItemDetail] = useState<Item | null>(null)
+  const equipped = state.inventory.filter((item) => item.equipped && (item.damage || item.range || /оруж/i.test(item.category)))
+  const quickSpells = [...state.spells].sort((left, right) => Number(state.favorites.includes(right.id)) - Number(state.favorites.includes(left.id)))
+  const quickSkills = state.skills.filter((skill) => skill.status !== 'passive').concat(state.skills.filter((skill) => skill.status === 'passive'))
+
+  return <div className="page-stack combat-page">
+    <section className="combat-section">
+      <div className="section-title"><div><p className="eyebrow">Общие данные персонажа</p><h2>Боевые ресурсы</h2></div><span className="mode-pill">Максимумы изменяются в основных параметрах</span></div>
+      <div className="resource-grid combat-resources">
+        <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" interactive />
+        <ResourceCard title="Мана" caption="Энергия" color="mana" resourceKey="mana" interactive />
+        <ResourceCard title="Превосходство" caption="Ресурс" color="bone" resourceKey="superiority" interactive />
+      </div>
+      {state.recentAction && <button className="undo-banner" type="button" onClick={state.undo}><ArchiveRestore size={17} />Отменить: {state.recentAction.label}</button>}
+    </section>
+
+    <section className="combat-section">
+      <div className="section-title"><div><p className="eyebrow">База + активные эффекты</p><h2>Боевые параметры</h2></div></div>
+      {combatCalculations.length || abilityCalculations.length ? <div className="combat-stat-grid">{combatCalculations.map((calculation) => <CombatStatCard key={calculation.target.id} calculation={calculation} onOpen={() => setCalculationDetail(calculation)} />)}{abilityCalculations.map((ability) => <AbilityCombatCard key={ability.id} name={ability.name} calculations={ability.calculations} onOpen={setCalculationDetail} />)}</div> : <EmptyState title="Нет числовых параметров" text="Заполните КД, скорость или характеристики в основных разделах персонажа." />}
+    </section>
+
+    <section className="combat-section effects-section">
+      <div className="section-title"><div><p className="eyebrow">Временные состояния</p><h2>Активные эффекты</h2></div><button className="button primary" type="button" onClick={() => setEditingEffect('new')}><Plus size={16} />Добавить эффект</button></div>
+      <EffectSection category="positive" effects={state.combatEffects.filter((effect) => effect.category === 'positive')} onEdit={setEditingEffect} />
+      <EffectSection category="negative" effects={state.combatEffects.filter((effect) => effect.category === 'negative')} onEdit={setEditingEffect} />
+      {state.combatEffects.some((effect) => effect.category === 'special') && <EffectSection category="special" effects={state.combatEffects.filter((effect) => effect.category === 'special')} onEdit={setEditingEffect} />}
+    </section>
+
+    <section className="combat-section">
+      <div className="section-title"><div><p className="eyebrow">Существующие данные листа</p><h2>Быстрый доступ</h2></div></div>
+      <div className="combat-quick-sections">
+        <QuickContentSection title="Экипированное оружие" empty="Нет экипированных предметов" entries={equipped.map((item) => ({ id: item.id, name: item.name, imageId: item.imageId, meta: [item.damage, item.range].filter(Boolean).join(' · '), onOpen: () => setItemDetail(item) }))} />
+        <QuickContentSection title="Заклинания" empty="Заклинания не добавлены" entries={quickSpells.map((spell) => ({ id: spell.id, name: spell.name, imageId: spell.imageId, meta: [spell.manaCost === null ? '' : `${spell.manaCost} маны`, spell.actionType, spell.range].filter(Boolean).join(' · '), onOpen: () => setSpellDetail(spell) }))} />
+        <QuickContentSection title="Способности и навыки" empty="Навыки не добавлены" entries={quickSkills.map((skill) => ({ id: skill.id, name: skill.name, imageId: skill.imageId, meta: [skill.actionType, skill.status === 'reaction' ? 'Реакция' : ''].filter(Boolean).join(' · '), onOpen: () => setSkillDetail(skill) }))} />
+      </div>
+    </section>
+
+    {editingEffect && <CombatEffectEditor effect={editingEffect === 'new' ? blankCombatEffect() : editingEffect} calculations={calculations} onClose={() => setEditingEffect(null)} />}
+    {calculationDetail && <CombatCalculationDetail calculation={calculationDetail} onClose={() => setCalculationDetail(null)} />}
+    {spellDetail && <SpellDetail spell={spellDetail} onClose={() => setSpellDetail(null)} />}
+    {skillDetail && <Modal title={skillDetail.name} onClose={() => setSkillDetail(null)}><ImageFrame imageId={skillDetail.imageId} label={skillDetail.name} className="detail-image" /><p className="lead">{skillDetail.summary || 'Краткое описание не указано.'}</p><LongDetail label="Полная механика" value={skillDetail.mechanics} /><LongDetail label="Условие" value={skillDetail.condition} /><LongDetail label="Требование" value={skillDetail.requirement} /></Modal>}
+    {itemDetail && <Modal title={itemDetail.name} onClose={() => setItemDetail(null)}><ImageFrame imageId={itemDetail.imageId} label={itemDetail.name} className="detail-image" /><dl className="details-grid"><Detail label="Категория" value={itemDetail.category} /><Detail label="Количество" value={itemDetail.quantity} /><Detail label="Урон" value={itemDetail.damage} /><Detail label="Тип урона" value={itemDetail.damageType} /><Detail label="Дальность" value={itemDetail.range} /><Detail label="Свойства" value={itemDetail.properties} /></dl><LongDetail label="Описание" value={itemDetail.description || itemDetail.note} /></Modal>}
+  </div>
+}
+
+function CombatStatCard({ calculation, onOpen }: { calculation: CombatCalculation; onOpen: () => void }) {
+  const changed = calculation.finalValue !== calculation.baseValue + calculation.equipmentValue
+  const unit = calculation.target.unit ?? ''
+  const effectValue = `${calculation.effectDelta >= 0 ? '+' : ''}${formatCombatNumber(calculation.effectDelta)}${unit}`
+  return <button type="button" className={changed ? 'combat-stat changed' : 'combat-stat'} onClick={onOpen} aria-label={`Расчёт: ${calculation.target.label}`}>
+    <span>{calculation.target.label}</span>
+    <strong>{formatCombatNumber(calculation.finalValue)}{unit}</strong>
+    <small>База: {formatCombatNumber(calculation.baseValue)}{unit}</small>
+    <small className={changed ? 'effect-total changed' : 'effect-total'}>Эффекты: {effectValue}</small>
+    <em>Расчёт</em>
+  </button>
+}
+
+function AbilityCombatCard({ name, calculations, onOpen }: { name: string; calculations: Partial<Record<'score' | 'check' | 'save', CombatCalculation>>; onOpen: (calculation: CombatCalculation) => void }) {
+  const values: Array<{ key: 'score' | 'check' | 'save'; label: string }> = [
+    { key: 'score', label: 'Значение' },
+    { key: 'check', label: 'Модификатор' },
+    { key: 'save', label: 'Спасбросок' },
+  ]
+  const changed = values.some(({ key }) => {
+    const calculation = calculations[key]
+    return calculation && calculation.finalValue !== calculation.baseValue + calculation.equipmentValue
+  })
+  return <article className={changed ? 'combat-stat ability-combat-stat changed' : 'combat-stat ability-combat-stat'} aria-label={`${name}: боевые значения`}>
+    <h3>{name}</h3>
+    <div className="ability-combat-values">
+      {values.map(({ key, label }) => {
+        const calculation = calculations[key]
+        if (!calculation) return <div className="ability-combat-value unavailable" key={key}><span>{label}</span><strong>—</strong><small>Не указано</small></div>
+        const valueChanged = calculation.finalValue !== calculation.baseValue + calculation.equipmentValue
+        const effectValue = `${calculation.effectDelta >= 0 ? '+' : ''}${formatCombatNumber(calculation.effectDelta)}`
+        return <button type="button" className={valueChanged ? 'ability-combat-value changed' : 'ability-combat-value'} key={key} aria-label={`Расчёт: ${calculation.target.label}`} onClick={() => onOpen(calculation)}><span>{label}</span><strong>{formatCombatNumber(calculation.finalValue)}</strong><small>База {formatCombatNumber(calculation.baseValue)} · эффекты {effectValue}</small></button>
+      })}
+    </div>
+  </article>
+}
+
+function CombatCalculationDetail({ calculation, onClose }: { calculation: CombatCalculation; onClose: () => void }) {
+  const unit = calculation.target.unit ?? ''
+  return <Modal title={`Расчёт: ${calculation.target.label}`} onClose={onClose}>
+    <div className="calculation-summary"><span>База</span><strong>{formatCombatNumber(calculation.baseValue)}{unit}</strong>{calculation.equipmentValue !== 0 && <><span>Экипировка</span><strong>{formatCombatNumber(calculation.equipmentValue)}{unit}</strong></>}<span>Итог</span><strong>{formatCombatNumber(calculation.finalValue)}{unit}</strong></div>
+    <p className="quiet calculation-order-hint">Порядок: положительные эффекты (+/−, ÷, ×), затем отрицательные (+/−, ×, ÷). Операция «=» применяется последней.</p>
+    {calculation.setConflict && <p className="calculation-warning" role="alert">Несколько активных эффектов устанавливают значение через «=». Применён последний созданный эффект.</p>}
+    {calculation.steps.length ? <ol className="calculation-steps">{calculation.steps.map((step, index) => <li key={`${step.effectId}-${index}`} className={step.applied ? '' : 'ignored'}><strong>{step.effectName}</strong><span>{combatOperationSymbols[step.operation]} {formatCombatNumber(step.value)}</span><span>{step.applied ? `${formatCombatNumber(step.before)} → ${formatCombatNumber(step.after)}` : 'Не применён: более новый SET'}</span></li>)}</ol> : <p className="quiet">Активных числовых изменений для этого параметра нет.</p>}
+  </Modal>
+}
+
+function EffectSection({ category, effects, onEdit }: { category: CombatCategory; effects: CombatEffect[]; onEdit: (effect: CombatEffect) => void }) {
+  return <section className={`effect-group ${category}`}><div className="effect-group-heading"><span aria-hidden="true">{category === 'positive' ? '+' : category === 'negative' ? '−' : '✦'}</span><div><p className="eyebrow">{combatCategoryLabels[category]}</p><h3>{combatEffectSectionTitles[category]}</h3></div><b>{effects.length}</b></div>{effects.length ? <div className="effect-grid">{effects.map((effect) => <EffectCard key={effect.id} effect={effect} onEdit={() => onEdit(effect)} />)}</div> : <p className="effect-empty">Нет эффектов этой категории.</p>}</section>
+}
+
+function EffectCard({ effect, onEdit }: { effect: CombatEffect; onEdit: () => void }) {
+  const state = useCharacterStore()
+  const targetLabels = new Map(calculateCombatState(state).map((calculation) => [calculation.target.id, calculation.target.label]))
+  return <Card className={`effect-card ${effect.category} ${effect.active ? '' : 'inactive'}`}>
+    <div className="effect-card-heading"><div><span className="effect-category">{combatCategoryLabels[effect.category]}</span><h3>{effect.name}</h3></div><button className="effect-toggle" type="button" aria-pressed={effect.active} onClick={() => state.toggleCombatEffect(effect.id)}>{effect.active ? 'Активен' : 'Выключен'}</button></div>
+    {effect.source && <p className="effect-source">Источник: {effect.source}</p>}
+    <p className="effect-description">{effect.description || 'Описание не указано.'}</p>
+    <p className="effect-duration">{effect.concentration && <span>Концентрация · </span>}{describeCombatDuration(effect.duration)}</p>
+    {effect.modifiers.length > 0 && <ul className="effect-modifiers">{effect.modifiers.map((modifier) => <li key={modifier.id}>{combatOperationSymbols[modifier.operation]}{formatCombatNumber(modifier.value)} <span>{targetLabels.get(modifier.target) ?? modifier.target}</span></li>)}</ul>}
+    {effect.duration.type === 'rounds' && <div className="effect-rounds"><span>Осталось раундов</span><Counter label={`${effect.name}: оставшиеся раунды`} value={effect.duration.roundsRemaining ?? 0} onChange={(value) => state.setCombatEffectRounds(effect.id, value)} onAdjust={(delta) => state.setCombatEffectRounds(effect.id, (effect.duration.roundsRemaining ?? 0) + delta)} /></div>}
+    <div className="effect-actions"><button className="button ghost small" type="button" onClick={onEdit}><Pencil size={14} />Изменить</button><button className="button ghost small" type="button" onClick={() => { if (window.confirm(`Снять эффект «${effect.name}»?`)) state.deleteCombatEffect(effect.id) }}><Trash2 size={14} />Снять</button></div>
+  </Card>
+}
+
+function CombatEffectEditor({ effect, calculations, onClose }: { effect: CombatEffect; calculations: CombatCalculation[]; onClose: () => void }) {
+  const state = useCharacterStore()
+  const [draft, setDraft] = useState<CombatEffect>(effect)
+  const [error, setError] = useState('')
+  const sourceOptions = [
+    ...state.spells.map((spell) => ({ id: `spell:${spell.id}`, label: `Заклинание: ${spell.name}` })),
+    ...state.skills.map((skill) => ({ id: `skill:${skill.id}`, label: `Навык: ${skill.name}` })),
+    ...state.inventory.map((item) => ({ id: `item:${item.id}`, label: `Предмет: ${item.name}` })),
+  ]
+  const updateModifier = (id: string, patch: Partial<CombatModifier>) => setDraft({ ...draft, modifiers: draft.modifiers.map((modifier) => modifier.id === id ? { ...modifier, ...patch } : modifier) })
+  const addModifier = () => {
+    const target = calculations[0]?.target.id
+    if (!target) return
+    setDraft({ ...draft, modifiers: [...draft.modifiers, { id: newId(), target, operation: 'ADD', value: 0 }] })
+  }
+  const save = () => {
+    if (!draft.name.trim()) return setError('Укажите название эффекта.')
+    if (draft.modifiers.some((modifier) => !Number.isFinite(modifier.value))) return setError('Все изменения должны содержать корректные числа.')
+    if (draft.modifiers.some((modifier) => modifier.operation === 'DIVIDE' && modifier.value === 0)) return setError('Деление на ноль запрещено.')
+    if (draft.duration.type === 'rounds' && (!Number.isFinite(draft.duration.roundsRemaining) || (draft.duration.roundsRemaining ?? -1) < 0)) return setError('Укажите неотрицательное количество раундов.')
+    state.upsertCombatEffect({ ...draft, name: draft.name.trim(), source: draft.source.trim() })
+    onClose()
+  }
+
+  return <Modal title={effect.name ? 'Редактировать эффект' : 'Новый эффект'} onClose={onClose}>
+    <div className="editor-grid combat-effect-editor">
+      <EditorField label="Название" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
+      <label className="editor-field"><span>Категория</span><select aria-label="Категория эффекта" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as CombatCategory })}>{combatCategories.map((category) => <option key={category} value={category}>{combatCategoryLabels[category]}</option>)}</select></label>
+      <EditorField label="Источник" value={draft.source} onChange={(source) => setDraft({ ...draft, source })} />
+      <label className="editor-field"><span>Связать с записью листа</span><select aria-label="Связь с записью листа" value={draft.sourceId ?? ''} onChange={(event) => setDraft({ ...draft, ...(event.target.value ? { sourceId: event.target.value } : { sourceId: undefined }) })}><option value="">Без связи</option>{sourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+      <div className="effect-description-field"><EditorField label="Описание" value={draft.description} type="textarea" onChange={(description) => setDraft({ ...draft, description })} /></div>
+      <label className="editor-field"><span>Длительность</span><select aria-label="Длительность эффекта" value={draft.duration.type} onChange={(event) => { const type = event.target.value as CombatEffect['duration']['type']; setDraft({ ...draft, duration: type === 'rounds' ? { type, roundsRemaining: draft.duration.roundsRemaining ?? 1 } : { type }, concentration: type === 'concentration' || draft.concentration }) }}>{combatDurationTypes.map((duration) => <option key={duration} value={duration}>{combatDurationLabels[duration]}</option>)}</select></label>
+      {draft.duration.type === 'rounds' && <label className="editor-field"><span>Осталось раундов</span><input aria-label="Осталось раундов" type="number" min="0" value={draft.duration.roundsRemaining ?? 0} onChange={(event) => setDraft({ ...draft, duration: { type: 'rounds', roundsRemaining: Number(event.target.value) } })} /></label>}
+      <label className="check"><input type="checkbox" checked={draft.concentration} onChange={(event) => setDraft({ ...draft, concentration: event.target.checked })} />Требует концентрации</label>
+      <label className="check"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />Эффект активен</label>
+    </div>
+    <section className="modifier-editor"><div className="section-title"><div><p className="eyebrow">Безопасные операции</p><h3>Числовые изменения</h3></div><button className="button ghost small" type="button" disabled={!calculations.length} onClick={addModifier}><Plus size={14} />Добавить изменение</button></div>
+      {draft.modifiers.length ? <div className="modifier-list">{draft.modifiers.map((modifier) => <div className="modifier-row" key={modifier.id}><label><span>Параметр</span><select aria-label="Целевой параметр" value={modifier.target} onChange={(event) => updateModifier(modifier.id, { target: event.target.value })}>{calculations.map((calculation) => <option key={calculation.target.id} value={calculation.target.id}>{calculation.target.label}</option>)}</select></label><label><span>Операция</span><select aria-label="Операция изменения" value={modifier.operation} onChange={(event) => updateModifier(modifier.id, { operation: event.target.value as CombatOperation })}>{combatOperations.map((operation) => <option key={operation} value={operation}>{combatOperationLabels[operation]}</option>)}</select></label><label><span>Число</span><input aria-label="Число изменения" type="number" step="any" value={modifier.value} onChange={(event) => updateModifier(modifier.id, { value: Number(event.target.value) })} /></label><button className="modifier-delete" type="button" aria-label="Удалить изменение" onClick={() => setDraft({ ...draft, modifiers: draft.modifiers.filter((entry) => entry.id !== modifier.id) })}><Trash2 size={16} /></button></div>)}</div> : <p className="quiet">Эффект может быть текстовым и не содержать числовых изменений.</p>}
+    </section>
+    {error && <p className="notice error-notice" role="alert">{error}</p>}
+    <button className="button primary" type="button" onClick={save}>Сохранить эффект</button>
+  </Modal>
+}
+
+function QuickContentSection({ title, empty, entries }: { title: string; empty: string; entries: Array<{ id: string; name: string; imageId?: string; meta: string; onOpen: () => void }> }) {
+  return <section className="quick-content"><h3>{title}</h3>{entries.length ? <div className="quick-content-list" role="region" aria-label={`${title}: быстрый доступ`} tabIndex={0}>{entries.map((entry) => <button type="button" key={entry.id} onClick={entry.onOpen}><ImageFrame imageId={entry.imageId} label={entry.name} /><span><strong>{entry.name}</strong><small>{entry.meta || 'Подробности'}</small></span></button>)}</div> : <p className="quiet">{empty}</p>}</section>
 }
 
 function Characteristics() {
@@ -371,14 +776,15 @@ function LongDetail({ label, value }: { label: string; value: string }) {
 }
 
 function ImageInput({ value, onChange }: { value?: string; onChange: (imageId?: string) => void }) {
+  const characterId = useLibraryStore((state) => state.activeCharacterId)
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget
     const file = input.files?.[0]
     if (!file) return
-    onChange(await saveImage(file))
+    onChange(await saveImage(file, characterId ?? undefined))
     input.value = ''
   }
-  return <div className="image-input"><label className="button ghost"><Upload size={16} />{value ? 'Заменить изображение' : 'Загрузить изображение'}<input hidden type="file" accept="image/*" onChange={upload} /></label>{value && <button className="button ghost" type="button" onClick={() => onChange(undefined)}>Убрать изображение</button>}</div>
+  return <div className="image-input"><label className="button ghost file-button"><Upload size={16} />{value ? 'Заменить изображение' : 'Загрузить изображение'}<input className="visually-hidden-input" aria-label={value ? 'Заменить изображение' : 'Загрузить изображение'} type="file" accept="image/*" onChange={upload} /></label>{value && <button className="button ghost" type="button" onClick={() => onChange(undefined)}>Убрать изображение</button>}</div>
 }
 
 function EditorField({ label, value, type = 'text', onChange }: { label: string; value: string; type?: 'text' | 'number' | 'textarea'; onChange: (value: string) => void }) {
@@ -475,7 +881,8 @@ function ItemEditor({ item, onClose }: { item: Item; onClose: () => void }) {
 function CharacterPage() {
   const state = useCharacterStore()
   const fields: Array<[string, string]> = [['race', 'Раса'], ['raceSubtype', 'Подвид'], ['classBackground', 'Класс/предыстория'], ['alignment', 'Мировоззрение'], ['profession', 'Профессия'], ['masteryMagic', 'Мастерство/Магия'], ['age', 'Возраст'], ['height', 'Рост'], ['weight', 'Вес'], ['eyes', 'Глаза'], ['hair', 'Волосы'], ['skin', 'Кожа']]
-  return <div className="page-stack"><section className="profile-card"><Avatar name={state.profile.name} imageId={state.profile.avatarId} className="profile-avatar" /><div><FieldValue label="Имя персонажа" value={state.profile.name} onChange={(value) => state.setProfile('name', value)} editable={state.editing} heading /><p className="quiet">Аватар сохраняется на этом устройстве вместе с листом.</p>{state.editing && <ImageInput value={state.profile.avatarId} onChange={(imageId) => state.setProfile('avatarId', imageId ?? '')} />}</div></section><section className="profile-grid">{fields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</section><section className="collections"><EntryCollection title="Языки" collection="languages" /><EntryCollection title="Владения" collection="proficiencies" /><EntryCollection title="Магические элементы" collection="elements" /></section><section className="text-grid">{[['traits', 'Черты'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['weaknesses', 'Слабости'], ['backstory', 'Предыстория персонажа'], ['characterNotes', 'Заметки']].map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</section></div>
+  const combatFields: Array<[string, string]> = [['attackBonus', 'Бонус броска атаки'], ['damageBonus', 'Бонус урона'], ['meleeRange', 'Дальность ближней атаки'], ['rangedRange', 'Дальность дальней атаки'], ['spellAttackBonus', 'Бонус атаки заклинанием'], ['spellSaveDc', 'Сложность спасброска заклинаний']]
+  return <div className="page-stack"><section className="profile-card"><Avatar name={state.profile.name} imageId={state.profile.avatarId} className="profile-avatar" /><div><FieldValue label="Имя персонажа" value={state.profile.name} onChange={(value) => state.setProfile('name', value)} editable={state.editing} heading /><p className="quiet">Аватар сохраняется на этом устройстве вместе с листом.</p>{state.editing && <ImageInput value={state.profile.avatarId} onChange={(imageId) => state.setProfile('avatarId', imageId ?? '')} />}</div></section><section className="profile-grid">{fields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</section><section><div className="section-title"><div><p className="eyebrow">База для вкладки «Бой»</p><h2>Атака и магия</h2></div></div><div className="profile-grid">{combatFields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</div></section><section className="collections"><EntryCollection title="Языки" collection="languages" /><EntryCollection title="Владения" collection="proficiencies" /><EntryCollection title="Магические элементы" collection="elements" /></section><section className="text-grid">{[['traits', 'Черты'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['weaknesses', 'Слабости'], ['backstory', 'Предыстория персонажа'], ['characterNotes', 'Заметки']].map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</section></div>
 }
 
 function EntryCollection({ title, collection }: { title: string; collection: 'languages' | 'proficiencies' | 'elements' }) {
@@ -516,55 +923,59 @@ function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
   return <Modal title={note.id ? 'Редактировать заметку' : 'Новая заметка'} onClose={onClose}><div className="editor-grid note-editor-grid"><EditorField label="Заголовок" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} /><EditorField label="Текст заметки" value={draft.body} type="textarea" onChange={(body) => setDraft({ ...draft, body })} /><TagInput label="Теги" value={draft.tags} onChange={(tags) => setDraft({ ...draft, tags })} /></div><ImageInput value={draft.imageId} onChange={(imageId) => setDraft({ ...draft, ...(imageId ? { imageId } : { imageId: undefined }) })} /><button className="button primary" type="button" onClick={() => { upsert({ ...draft, title: draft.title.trim() || 'Без названия', updatedAt: new Date().toISOString() }); onClose() }}>Сохранить заметку</button></Modal>
 }
 
-function SettingsPage() {
+type SettingsPageProps = {
+  persistCurrent: () => Promise<CharacterLibrary>
+  applySingleImport: (prepared: PreparedBackupImport, replace: boolean) => Promise<void>
+  applyCollectionImport: (prepared: PreparedBackupImport, mode: 'merge' | 'replace', conflicts: 'copy' | 'replace' | 'skip') => Promise<void>
+  resetCurrent: () => Promise<void>
+  resetAll: () => Promise<void>
+}
+
+function SettingsPage({ persistCurrent, applySingleImport, applyCollectionImport, resetCurrent, resetAll }: SettingsPageProps) {
   const state = useCharacterStore()
+  const library = useLibraryStore()
+  const [scope, setScope] = useState<BackupScope>('current')
+  const [pending, setPending] = useState<PreparedBackupImport | null>(null)
+  const [conflicts, setConflicts] = useState<'copy' | 'replace' | 'skip'>('copy')
+  const [resetOpen, setResetOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const download = (blob: Blob, filename: string) => {
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = filename
-    link.click()
-    URL.revokeObjectURL(link.href)
+  const active = getActiveCharacter(library)
+  const datedName = (extension: 'zip' | 'json') => scope === 'current' && active
+    ? `mikato-character-${sanitizeFilename(active.name)}-${new Date().toISOString().slice(0, 10)}.${extension}`
+    : `mikato-all-characters-${new Date().toISOString().slice(0, 10)}.${extension}`
+  const run = async (work: () => Promise<void>, success: string) => {
+    setBusy(true); setMessage('')
+    try { await work(); setMessage(success) } catch (error) { setMessage(error instanceof Error ? error.message : 'Операция не выполнена.') }
+    finally { setBusy(false) }
   }
-  const exportData = () => download(new Blob([serializeCharacter(snapshot(state))], { type: 'application/json' }), 'dnd-mge-character.json')
-  const exportBackup = async () => {
-    setMessage('Создаю резервную копию с изображениями…')
-    try {
-      const backup = await createCharacterBackup(snapshot(state))
-      download(backup.blob, 'dnd-mge-character-with-images.zip')
-      setMessage(`Резервная копия создана. Добавлено изображений: ${backup.imageCount}.`)
-    } catch {
-      setMessage('Не удалось создать резервную копию с изображениями.')
-    }
-  }
-  const importData = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget
-    const file = input.files?.[0]
+  const exportZip = () => run(async () => {
+    const backup = await createLibraryBackup(await persistCurrent(), scope)
+    downloadBlob(backup.blob, datedName('zip'))
+    setMessage(`ZIP создан. Добавлено изображений: ${backup.imageCount}.`)
+  }, 'ZIP создан.')
+  const exportJson = () => run(async () => {
+    const json = createJsonBackup(await persistCurrent(), scope)
+    downloadBlob(new Blob([json], { type: 'application/json' }), datedName('json'))
+  }, 'JSON без изображений создан.')
+  const prepareImport = async (event: ChangeEvent<HTMLInputElement>, kind: 'zip' | 'json') => {
+    const input = event.currentTarget; const file = input.files?.[0]
     if (!file) return
-    try {
-      state.importData(await file.text())
-      setMessage('Данные импортированы и мигрированы без сброса листа.')
-    } catch {
-      setMessage('Не удалось импортировать файл: нужен корректный JSON листа персонажа.')
-    }
-    input.value = ''
+    setBusy(true); setMessage('Проверяю резервную копию…')
+    try { setPending(kind === 'zip' ? await restoreLibraryBackup(file) : parseJsonBackup(await file.text())); setMessage('Файл проверен. Выберите способ импорта.') }
+    catch { setMessage(kind === 'zip' ? 'Не удалось прочитать ZIP: архив повреждён или имеет неподдерживаемый формат.' : 'Не удалось прочитать JSON: файл повреждён или имеет неподдерживаемый формат.') }
+    finally { input.value = ''; setBusy(false) }
   }
-  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget
-    const file = input.files?.[0]
-    if (!file) return
-    setMessage('Восстанавливаю лист и изображения…')
-    try {
-      const backup = await restoreCharacterBackup(file)
-      state.setCharacter(backup.character)
-      state.setEditing(false)
-      setMessage(`Резервная копия восстановлена. Изображений: ${backup.imageCount}.`)
-    } catch {
-      setMessage('Не удалось импортировать ZIP: выберите резервную копию, созданную этим сайтом.')
-    }
-    input.value = ''
-  }
-  return <div className="page-stack settings-page"><Card><p className="eyebrow">Оформление</p><h2>Тема интерфейса</h2><div className="theme-options"><button type="button" className={state.settings.themeMode === 'dark' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'dark'} onClick={() => state.setSetting('themeMode', 'dark')}><Moon size={17} />Тёмная</button><button type="button" className={state.settings.themeMode === 'light' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'light'} onClick={() => state.setSetting('themeMode', 'light')}><Sun size={17} />Светлая</button></div><p className="setting-label">Акцентный цвет</p><div className="accent-options">{accentOptions.map(([value, label]) => <button key={value} type="button" className={`accent-swatch ${value} ${state.settings.accentColor === value ? 'active' : ''}`} aria-label={`Акцент: ${label}`} aria-pressed={state.settings.accentColor === value} onClick={() => state.setSetting('accentColor', value)}><span />{label}</button>)}</div></Card><Card><p className="eyebrow">Опыт и уровень</p><h2>Правило повышения</h2><p className="quiet">Максимальный уровень — 25. На каждом уровне показывается опыт, необходимый для следующего.</p><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'carry'} onChange={() => state.setSetting('levelUpBehavior', 'carry')} />Переносить избыток опыта</label><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'reset'} onChange={() => state.setSetting('levelUpBehavior', 'reset')} />Сбрасывать опыт в ноль</label><label className="check"><input type="checkbox" checked={state.settings.allowNegativeMana} onChange={(event) => state.setSetting('allowNegativeMana', event.target.checked)} />Разрешить отрицательную ману</label></Card><Card><p className="eyebrow">Данные</p><h2>Резервная копия</h2><p className="quiet">ZIP содержит лист и все связанные фотографии. При импорте аватар и изображения карточек автоматически возвращаются на прежние места. JSON оставлен как облегчённый формат без фотографий.</p><div className="button-row"><button className="button primary" type="button" onClick={() => void exportBackup()}><FileArchive size={16} />Экспорт ZIP с фото</button><label className="button primary"><Upload size={16} />Импорт ZIP с фото<input hidden type="file" accept=".zip,application/zip" onChange={importBackup} /></label></div><div className="button-row secondary-backup-actions"><button className="button ghost" type="button" onClick={exportData}><Download size={16} />Экспорт JSON без фото</button><label className="button ghost"><Upload size={16} />Импорт JSON<input hidden type="file" accept="application/json" onChange={importData} /></label><button className="button ghost" type="button" onClick={() => { void db.snapshots.put({ id: 'character', value: snapshot(state) }); setMessage('Текущий лист сохранён локально в этом браузере.') }}>Сохранить локально</button></div><button className="danger" type="button" onClick={() => { if (window.confirm('Сбросить лист к исходным данным? Это не удаляет изображения из IndexedDB.')) { state.reset(); setMessage('Восстановлены исходные данные.') } }}>Сбросить к исходным данным</button>{message && <p className="notice" role="status">{message}</p>}</Card></div>
+  const finishImport = (work: () => Promise<void>, success: string) => run(async () => { await work(); setPending(null) }, success)
+  const confirmReplaceCurrent = () => pending && window.confirm(`Заменить текущего персонажа «${active?.name ?? 'Без имени'}»? Его текущие данные будут перезаписаны.`) && finishImport(() => applySingleImport(pending, true), 'Текущий персонаж заменён.')
+  const confirmReplaceAll = () => pending && window.confirm('Заменить всю библиотеку? Все текущие персонажи и их локальные изображения будут удалены.') && finishImport(() => applyCollectionImport(pending, 'replace', conflicts), 'Библиотека заменена.')
+  return <div className="page-stack settings-page">
+    <Card><p className="eyebrow">Оформление</p><h2>Тема интерфейса</h2><div className="theme-options"><button type="button" className={state.settings.themeMode === 'dark' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'dark'} onClick={() => state.setSetting('themeMode', 'dark')}><Moon size={17} />Тёмная</button><button type="button" className={state.settings.themeMode === 'light' ? 'active' : ''} aria-pressed={state.settings.themeMode === 'light'} onClick={() => state.setSetting('themeMode', 'light')}><Sun size={17} />Светлая</button></div><p className="setting-label">Акцентный цвет</p><div className="accent-options">{accentOptions.map(([value, label]) => <button key={value} type="button" className={`accent-swatch ${value} ${state.settings.accentColor === value ? 'active' : ''}`} aria-label={`Акцент: ${label}`} aria-pressed={state.settings.accentColor === value} onClick={() => state.setSetting('accentColor', value)}><span />{label}</button>)}</div></Card>
+    <Card><p className="eyebrow">Опыт и уровень</p><h2>Правило повышения</h2><p className="quiet">Эти настройки общие для всей библиотеки персонажей.</p><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'carry'} onChange={() => state.setSetting('levelUpBehavior', 'carry')} />Переносить избыток опыта</label><label className="check"><input type="radio" checked={state.settings.levelUpBehavior === 'reset'} onChange={() => state.setSetting('levelUpBehavior', 'reset')} />Сбрасывать опыт в ноль</label><label className="check"><input type="checkbox" checked={state.settings.allowNegativeMana} onChange={(event) => state.setSetting('allowNegativeMana', event.target.checked)} />Разрешить отрицательную ману</label></Card>
+    <Card><p className="eyebrow">Данные</p><h2>Резервные копии</h2><div className="backup-scope" role="radiogroup" aria-label="Что экспортировать"><label><input type="radio" name="backup-scope" checked={scope === 'current'} onChange={() => setScope('current')} />Только текущего персонажа</label><label><input type="radio" name="backup-scope" checked={scope === 'all'} onChange={() => setScope('all')} />Всех персонажей</label></div><p className="quiet">ZIP включает фотографии. JSON легче, но изображения в него не входят.</p><div className="button-row"><button className="button primary" disabled={busy || (scope === 'current' && !active)} type="button" onClick={() => void exportZip()}><FileArchive size={16} />Экспорт ZIP с фото</button><button className="button ghost" disabled={busy || (scope === 'current' && !active)} type="button" onClick={() => void exportJson()}><Download size={16} />Экспорт JSON без фото</button></div><div className="button-row secondary-backup-actions"><label className={`button primary file-button ${busy ? 'disabled' : ''}`}><Upload size={16} />Импорт ZIP<input className="visually-hidden-input" aria-label="Импорт ZIP" disabled={busy} type="file" accept=".zip,application/zip" onChange={(event) => void prepareImport(event, 'zip')} /></label><label className={`button ghost file-button ${busy ? 'disabled' : ''}`}><Upload size={16} />Импорт JSON<input className="visually-hidden-input" aria-label="Импорт JSON" disabled={busy} type="file" accept=".json,application/json" onChange={(event) => void prepareImport(event, 'json')} /></label><button className="button ghost" disabled={busy} type="button" onClick={() => void run(async () => { await persistCurrent() }, 'Вся библиотека сохранена локально в этом браузере.')}>Сохранить локально</button></div><button className="danger" disabled={busy} type="button" onClick={() => setResetOpen(true)}>Сброс данных…</button>{message && <p className="notice" role="status">{message}</p>}</Card>
+    {pending && <Modal title="Импорт резервной копии" onClose={() => setPending(null)}>{pending.legacy && <p className="notice">Это резервная копия старого формата. Она будет импортирована как отдельный персонаж.</p>}{pending.backupType === 'singleCharacter' ? <><p>В файле найден персонаж: <strong>{pending.character?.name ?? 'Без имени'}</strong></p><p className="quiet">Рекомендуется добавить его как нового, чтобы не потерять открытый лист.</p><div className="button-row"><button className="button primary" disabled={busy} type="button" onClick={() => void finishImport(() => applySingleImport(pending, false), 'Персонаж добавлен в библиотеку.')}>Добавить как нового</button><button className="button ghost" disabled={busy || !active || pending.legacy} type="button" onClick={() => void confirmReplaceCurrent()}>Заменить текущего</button><button className="button ghost" type="button" onClick={() => setPending(null)}>Отмена</button></div></> : <><p>В резервной копии найдено персонажей: <strong>{pending.library?.characterOrder.length ?? 0}</strong></p><label className="editor-field"><span>Если ID уже существует</span><select value={conflicts} onChange={(event) => setConflicts(event.target.value as typeof conflicts)}><option value="copy">Создать копии</option><option value="replace">Заменить совпадающих</option><option value="skip">Пропустить совпадающих</option></select></label><div className="button-row"><button className="button primary" disabled={busy} type="button" onClick={() => void finishImport(() => applyCollectionImport(pending, 'merge', conflicts), 'Коллекция объединена с текущей библиотекой.')}>Объединить с существующими</button><button className="button ghost" disabled={busy} type="button" onClick={() => void confirmReplaceAll()}>Заменить всю библиотеку</button><button className="button ghost" type="button" onClick={() => setPending(null)}>Отмена</button></div></>}</Modal>}
+    {resetOpen && <Modal title="Сброс данных" onClose={() => setResetOpen(false)}><p>Выберите область сброса. Операция удалит связанные локальные изображения.</p><div className="reset-options"><button className="button ghost" disabled={busy || !active} type="button" onClick={() => { if (window.confirm(`Сбросить персонажа «${active?.name ?? 'Без имени'}» к исходному состоянию?`)) void run(async () => { await resetCurrent(); setResetOpen(false) }, 'Текущий персонаж сброшен.') }}>Сбросить текущего персонажа</button><button className="danger" disabled={busy} type="button" onClick={() => { if (window.confirm('Удалить ВСЕХ персонажей и создать новый исходный лист?')) void run(async () => { await resetAll(); setResetOpen(false) }, 'Вся библиотека сброшена.') }}>Сбросить всю библиотеку</button><button className="button ghost" type="button" onClick={() => setResetOpen(false)}>Отмена</button></div></Modal>}
+  </div>
 }
 
 function DicePanel({ onClose }: { onClose: () => void }) {
@@ -597,6 +1008,10 @@ function DicePanel({ onClose }: { onClose: () => void }) {
 
 function blankSpell(): Spell {
   return { id: '', name: '', elements: [], characteristic: '', components: '', castingTime: '', target: '', range: '', duration: '', manaCost: null, damageOrHealing: '', difficulty: '', level: '', summary: '', description: '', effects: '', restrictions: '', tags: [], requiresConcentration: false, actionType: '' }
+}
+
+function blankCombatEffect(): CombatEffect {
+  return { id: newId(), name: '', category: 'special', source: '', description: '', active: true, concentration: false, createdAt: new Date().toISOString(), duration: { type: 'manual' }, modifiers: [] }
 }
 
 function blankSkill(): Skill {

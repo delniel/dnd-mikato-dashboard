@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
+import type { CombatEffect } from './combat'
 import { changeResource, convertCurrency, deductMana, levelUp, manaRecoveryAmount, migrateCharacter, restoreCharacter, restoreMana, rollDice, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
@@ -167,7 +168,7 @@ describe('кубики и миграция', () => {
       settings: { levelUpBehavior: 'carry', allowNegativeMana: false },
     }
     const migrated = migrateCharacter(old)
-    expect(migrated.schemaVersion).toBe(4)
+    expect(migrated.schemaVersion).toBe(5)
     expect(migrated.profile.avatarId).toBe('avatar-1')
     expect(migrated.profile.masteryMagic).toBe('Мастерство и Магия')
     expect(migrated.resources.hp.current).toBe(40)
@@ -229,7 +230,14 @@ describe('кубики и миграция', () => {
     expect(restored.currencies.GP).toBe(70)
     expect(restored.spells.length).toBeGreaterThan(0)
     expect(restored.notes).toEqual([])
-    expect(restoreCharacter(serializeCharacter(base())).schemaVersion).toBe(4)
+    expect(restored.combatEffects).toEqual([])
+    expect(restoreCharacter(serializeCharacter(base())).schemaVersion).toBe(5)
+  })
+
+  it('сохраняет боевые эффекты при экспорте и импорте', () => {
+    const combatEffect: CombatEffect = { id: 'acid', name: 'Разъедание кислотой', category: 'negative', source: '', description: '1к6 урона кислотой', active: true, concentration: false, createdAt: '2026-07-22T10:00:00.000Z', duration: { type: 'rounds', roundsRemaining: 3 }, modifiers: [] }
+    const restored = restoreCharacter(serializeCharacter({ ...base(), combatEffects: [combatEffect] }))
+    expect(restored.combatEffects).toEqual([combatEffect])
   })
 
   it('конвертирует только соседние номиналы монет по курсу 1 к 10', () => {

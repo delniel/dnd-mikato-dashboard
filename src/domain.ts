@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { createInitialCharacter } from './data'
+import { combatEffectSchema, migrateCombatEffects, type CombatEffect } from './combat'
 
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 export const experienceThresholds = [20, 45, 75, 110, 150, 195, 245, 300, 360, 425, 495, 570, 650, 735, 825, 920, 1020, 1125, 1235, 1350, 1470, 1595, 1725, 1860, 2000]
 
 export type ResourceKey = 'hp' | 'mana' | 'superiority'
@@ -28,6 +29,7 @@ export type CharacterState = {
   senses: Record<string, string>
   favorites: string[]
   notes: Note[]
+  combatEffects: CombatEffect[]
   settings: { levelUpBehavior: 'carry' | 'reset'; allowNegativeMana: boolean; themeMode: ThemeMode; accentColor: AccentColor }
   recentAction?: { key: ResourceKey; previous: number; label: string }
   characteristics: Characteristic[]
@@ -62,6 +64,7 @@ export const characterSchema = z.object({
   senses: z.record(z.string(), z.string()),
   favorites: z.array(z.string()),
   notes: z.array(noteSchema),
+  combatEffects: z.array(combatEffectSchema),
   settings: z.object({ levelUpBehavior: z.enum(['carry', 'reset']), allowNegativeMana: z.boolean(), themeMode: z.enum(['dark', 'light']), accentColor: z.enum(['red', 'blue', 'cyan', 'green', 'purple', 'pink', 'yellow']) }),
   recentAction: z.object({ key: z.enum(['hp', 'mana', 'superiority']), previous: z.number(), label: z.string() }).optional(),
   characteristics: z.array(characteristicSchema),
@@ -309,7 +312,7 @@ export function migrateCharacter(input: unknown): CharacterState {
       : common
   }
 
-  const known = new Set(['schemaVersion', 'profile', 'resources', 'experience', 'level', 'inspiration', 'senses', 'favorites', 'notes', 'settings', 'recentAction', 'characteristics', 'languages', 'proficiencies', 'elements', 'spells', 'skills', 'inventory', 'currencies', 'diceHistory', 'extras'])
+  const known = new Set(['schemaVersion', 'profile', 'resources', 'experience', 'level', 'inspiration', 'senses', 'favorites', 'notes', 'combatEffects', 'settings', 'recentAction', 'characteristics', 'languages', 'proficiencies', 'elements', 'spells', 'skills', 'inventory', 'currencies', 'diceHistory', 'extras'])
   const legacyElectrum = isRecord(input.currencies) && typeof input.currencies.EP === 'number' ? input.currencies.EP : undefined
   const extras = {
     ...defaults.extras,
@@ -329,6 +332,7 @@ export function migrateCharacter(input: unknown): CharacterState {
     senses: { ...defaults.senses, ...stringRecord(input.senses) },
     favorites: stringArray(input.favorites),
     notes: migrateNotes(input.notes),
+    combatEffects: migrateCombatEffects(input.combatEffects),
     settings: isRecord(input.settings)
       ? {
           levelUpBehavior: input.settings.levelUpBehavior === 'reset' ? 'reset' : 'carry',
@@ -356,7 +360,7 @@ export function migrateCharacter(input: unknown): CharacterState {
 
 // Dice history is intentionally local-session data in exported backups; migrations and IndexedDB retain it.
 export function serializeCharacter(state: CharacterState): string {
-  return JSON.stringify({ ...state, diceHistory: [] }, null, 2)
+  return JSON.stringify({ ...state, schemaVersion: SCHEMA_VERSION, diceHistory: [] }, null, 2)
 }
 
 export function restoreCharacter(raw: string): CharacterState {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { createInitialCharacter } from './data'
+import type { CombatEffect } from './combat'
 import {
   changeResource,
   convertCurrency,
@@ -60,6 +61,10 @@ type Store = CharacterState & {
   deleteItem: (id: string) => void
   upsertNote: (note: Note) => void
   deleteNote: (id: string) => void
+  upsertCombatEffect: (effect: CombatEffect) => void
+  deleteCombatEffect: (id: string) => void
+  toggleCombatEffect: (id: string) => void
+  setCombatEffectRounds: (id: string, rounds: number) => void
   addRoll: (selection: Record<string, number>) => void
   clearRolls: () => void
   setSetting: <K extends keyof CharacterState['settings']>(key: K, value: CharacterState['settings'][K]) => void
@@ -130,6 +135,10 @@ export const useCharacterStore = create<Store>((set, get) => ({
   deleteItem: (id) => set((state) => ({ inventory: state.inventory.filter((item) => item.id !== id) })),
   upsertNote: (note) => set((state) => ({ notes: updateList(state.notes, note) })),
   deleteNote: (id) => set((state) => ({ notes: state.notes.filter((note) => note.id !== id) })),
+  upsertCombatEffect: (effect) => set((state) => ({ combatEffects: updateList(state.combatEffects, effect) })),
+  deleteCombatEffect: (id) => set((state) => ({ combatEffects: state.combatEffects.filter((effect) => effect.id !== id) })),
+  toggleCombatEffect: (id) => set((state) => ({ combatEffects: state.combatEffects.map((effect) => effect.id === id ? { ...effect, active: !effect.active } : effect) })),
+  setCombatEffectRounds: (id, rounds) => set((state) => ({ combatEffects: state.combatEffects.map((effect) => effect.id === id && effect.duration.type === 'rounds' ? { ...effect, duration: { ...effect.duration, roundsRemaining: Math.max(0, Number.isFinite(rounds) ? Math.trunc(rounds) : effect.duration.roundsRemaining ?? 0) } } : effect) })),
 
   addRoll: (selection) => set((state) => ({ diceHistory: [rollDice(selection), ...state.diceHistory].slice(0, 10) })),
   clearRolls: () => set({ diceHistory: [] }),

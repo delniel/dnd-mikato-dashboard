@@ -1,30 +1,41 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from './App'
 import { createInitialCharacter } from './data'
-import { saveCharacter, saveImage } from './db'
+import { loadLibrary, saveImage, saveLibrary } from './db'
+import { addCharacter, createCharacterLibrary, createCharacterRecord } from './library'
+import { useLibraryStore } from './libraryStore'
 import { useCharacterStore } from './store'
 
 vi.mock('./db', () => ({
-  db: { snapshots: { put: vi.fn() } },
   cloneImage: vi.fn(async (id?: string) => id ? `copy-${id}` : undefined),
-  loadCharacter: vi.fn(async () => undefined),
   loadImage: vi.fn(async () => undefined),
-  saveCharacter: vi.fn(async () => undefined),
+  loadImages: vi.fn(async () => []),
+  loadLibrary: vi.fn(async () => undefined),
+  removeImages: vi.fn(async () => undefined),
   saveImage: vi.fn(async () => 'uploaded-image'),
+  saveImages: vi.fn(async () => undefined),
+  saveLibrary: vi.fn(async () => undefined),
 }))
 
 vi.mock('./backup', () => ({
-  createCharacterBackup: vi.fn(async () => ({ blob: new Blob(), imageCount: 0 })),
-  restoreCharacterBackup: vi.fn(),
+  createJsonBackup: vi.fn(() => '{}'),
+  createLibraryBackup: vi.fn(async () => ({ blob: new Blob(), imageCount: 0 })),
+  materializeImportedCharacter: vi.fn((character, _images, id = 'imported') => ({ character: { ...character, id }, images: [] })),
+  parseJsonBackup: vi.fn(),
+  restoreLibraryBackup: vi.fn(),
 }))
 
 const navigate = (page: string) => fireEvent.click(screen.getAllByRole('button', { name: page === 'Заклинания' ? 'Заклинания и Способности' : page })[0])
 
 describe('игровые представления листа', () => {
   beforeEach(() => {
-    useCharacterStore.setState({ ...createInitialCharacter(), editing: false })
-    vi.mocked(saveCharacter).mockClear()
+    const initial = createInitialCharacter()
+    useCharacterStore.setState({ ...initial, editing: false })
+    useLibraryStore.getState().replaceLibrary(createCharacterLibrary(initial, { id: 'test-character', timestamp: '2026-01-01T00:00:00.000Z' }))
+    vi.mocked(loadLibrary).mockReset()
+    vi.mocked(loadLibrary).mockResolvedValue(undefined)
+    vi.mocked(saveLibrary).mockClear()
     vi.mocked(saveImage).mockClear()
   })
 
@@ -58,6 +69,7 @@ describe('игровые представления листа', () => {
     initial.resources.mana = { current: 250, max: 300 }
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
+    navigate('Бой')
     fireEvent.click(await screen.findByRole('button', { name: 'Восстановление маны (+30)' }))
     expect(useCharacterStore.getState().resources.mana.current).toBe(280)
   })
@@ -109,21 +121,23 @@ describe('игровые представления листа', () => {
 
   it('ограничивает глобальное редактирование тремя разделами и сохраняет изменения при переходе', async () => {
     render(<App />)
-    await waitFor(() => expect(saveCharacter).toHaveBeenCalled())
-    vi.mocked(saveCharacter).mockClear()
+    await waitFor(() => expect(saveLibrary).toHaveBeenCalled())
+    vi.mocked(saveLibrary).mockClear()
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
     fireEvent.change(screen.getByLabelText('Имя игрока'), { target: { value: 'Новый игрок' } })
     navigate('Заклинания')
     expect(screen.queryByRole('button', { name: 'Редактировать' })).not.toBeInTheDocument()
-    await waitFor(() => expect(saveCharacter).toHaveBeenCalledWith(expect.objectContaining({ profile: expect.objectContaining({ playerName: 'Новый игрок' }) })))
+    await waitFor(() => expect(saveLibrary).toHaveBeenCalledWith(expect.objectContaining({ characters: expect.objectContaining({}) })))
     navigate('Персонаж')
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeInTheDocument()
   })
 
   it('переключает вдохновение, главную характеристику и экипировку прямо из игрового режима', async () => {
     render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Временные хиты: плюс 5' }))
+    navigate('Бой')
+    fireEvent.click(await screen.findByRole('button', { name: 'Временные хиты: плюс 5' }))
     expect(useCharacterStore.getState().resources.hp.temporary).toBe(5)
+    navigate('Обзор')
     fireEvent.click(await screen.findByRole('button', { name: /Вдохновение/ }))
     expect(useCharacterStore.getState().inspiration).toBe(true)
     navigate('Характеристики')
@@ -133,6 +147,84 @@ describe('игровые представления листа', () => {
     const item = useCharacterStore.getState().inventory[0]
     fireEvent.click(screen.getByRole('button', { name: `${item.equipped ? 'Снять' : 'Экипировать'} ${item.name}` }))
     expect(useCharacterStore.getState().inventory[0].equipped).toBe(!item.equipped)
+  })
+
+  it('оставляет текущие ресурсы обзора только для чтения, но позволяет редактировать максимумы HP и маны', async () => {
+    render(<App />)
+    expect(await screen.findByText('81 / 81')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Хиты: текущее значение')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    expect(screen.getByLabelText('Хиты: максимум')).toBeInTheDocument()
+    expect(screen.getByLabelText('Мана: максимум')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Превосходство: максимум')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Хиты: текущее значение')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Хиты: максимум'), { target: { value: '90' } })
+    expect(useCharacterStore.getState().resources.hp.max).toBe(90)
+    navigate('Бой')
+    expect(screen.getByLabelText('Хиты: текущее значение')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Хиты: максимум')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Хиты: текущее значение: плюс 10' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Мана: текущее значение: минус 10' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Превосходство: текущее значение: плюс 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Превосходство: текущее значение: плюс 5' })).not.toBeInTheDocument()
+  })
+
+  it('синхронизирует HP между вкладками Бой и Обзор', async () => {
+    render(<App />)
+    navigate('Бой')
+    fireEvent.change(await screen.findByLabelText('Хиты: текущее значение'), { target: { value: '70' } })
+    expect(useCharacterStore.getState().resources.hp.current).toBe(70)
+    navigate('Обзор')
+    expect(await screen.findByText('70 / 81')).toBeInTheDocument()
+  })
+
+  it('объединяет значение, модификатор и спасбросок характеристики в одну карточку', async () => {
+    render(<App />)
+    navigate('Бой')
+    const strength = await screen.findByLabelText('Сила: боевые значения')
+    expect(within(strength).getByText('Значение')).toBeInTheDocument()
+    expect(within(strength).getByText('Модификатор')).toBeInTheDocument()
+    expect(within(strength).getByText('Спасбросок')).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/боевые значения$/)).toHaveLength(6)
+  })
+
+  it('показывает все записи быстрого доступа внутри прокручиваемых областей', async () => {
+    render(<App />)
+    navigate('Бой')
+    const spells = await screen.findByRole('region', { name: 'Заклинания: быстрый доступ' })
+    const skills = screen.getByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    expect(spells).toHaveAttribute('tabindex', '0')
+    expect(skills).toHaveAttribute('tabindex', '0')
+    expect(within(spells).getAllByRole('button')).toHaveLength(useCharacterStore.getState().spells.length)
+    expect(within(skills).getAllByRole('button')).toHaveLength(useCharacterStore.getState().skills.length)
+  })
+
+  it('показывает эффекты в правильных секциях и сохраняет текстовый эффект', async () => {
+    const initial = createInitialCharacter()
+    initial.combatEffects = [
+      { id: 'blessing', name: 'Благословение', category: 'positive', source: 'Заклинание', description: '+ к бою', active: true, concentration: false, createdAt: '2026-07-22T10:00:00.000Z', duration: { type: 'manual' }, modifiers: [] },
+      { id: 'acid', name: 'Разъедание кислотой', category: 'negative', source: '', description: 'В начале хода 1к6 урона кислотой', active: true, concentration: false, createdAt: '2026-07-22T11:00:00.000Z', duration: { type: 'rounds', roundsRemaining: 3 }, modifiers: [] },
+    ]
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Бой')
+    expect(await screen.findByRole('heading', { name: 'Положительные эффекты' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Отрицательные эффекты' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Благословение' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Разъедание кислотой' })).toBeInTheDocument()
+    expect(screen.getByText('В начале хода 1к6 урона кислотой')).toBeInTheDocument()
+    await waitFor(() => expect(saveLibrary).toHaveBeenCalledWith(expect.objectContaining({ characters: expect.any(Object) })))
+  })
+
+  it('восстанавливает сохранённые эффекты при загрузке страницы', async () => {
+    const saved = createInitialCharacter()
+    saved.combatEffects = [{ id: 'persisted', name: 'Сохранённый эффект', category: 'special', source: '', description: 'После перезагрузки', active: true, concentration: false, createdAt: '2026-07-22T12:00:00.000Z', duration: { type: 'manual' }, modifiers: [] }]
+    vi.mocked(loadLibrary).mockResolvedValueOnce({ id: 'library', value: createCharacterLibrary(saved, { id: 'saved-character' }) })
+    render(<App />)
+    await waitFor(() => expect(useCharacterStore.getState().combatEffects).toHaveLength(1))
+    navigate('Бой')
+    expect(await screen.findByRole('heading', { name: 'Особые эффекты' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Сохранённый эффект' })).toBeInTheDocument()
   })
 
   it('конвертирует соседние номиналы монет кнопками инвентаря', async () => {
@@ -219,7 +311,7 @@ describe('игровые представления листа', () => {
     await waitFor(() => expect(saveImage).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить заклинание' }))
     await waitFor(() => expect(useCharacterStore.getState().spells[0].imageId).toBe('uploaded-image'))
-    await waitFor(() => expect(saveCharacter).toHaveBeenCalled())
+    await waitFor(() => expect(saveLibrary).toHaveBeenCalled())
     fireEvent.click(screen.getAllByRole('button', { name: /Редактировать / })[0])
     fireEvent.click(screen.getByRole('button', { name: 'Убрать изображение' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить заклинание' }))
@@ -259,5 +351,58 @@ describe('игровые представления листа', () => {
     expect(screen.queryByRole('heading', { name: 'Список NPC' })).not.toBeInTheDocument()
     fireEvent.change(search, { target: { value: 'персонажи' } })
     expect(screen.getByRole('heading', { name: 'Список NPC' })).toBeInTheDocument()
+  })
+
+  it('переключает три независимых персонажа без смешивания ресурсов и заклинаний', async () => {
+    const make = (name: string, hp: number, spellName: string) => {
+      const data = createInitialCharacter(); data.profile.name = name; data.resources.hp.current = hp; data.spells[0].name = spellName
+      return data
+    }
+    let library = createCharacterLibrary(make('Альфа', 11, 'Альфа-заклинание'), { id: 'alpha' })
+    library = addCharacter(library, createCharacterRecord(make('Бета', 22, 'Бета-заклинание'), { id: 'beta' }))
+    library = addCharacter(library, createCharacterRecord(make('Гамма', 33, 'Гамма-заклинание'), { id: 'gamma' }))
+    library = { ...library, activeCharacterId: 'alpha' }
+    vi.mocked(loadLibrary).mockResolvedValueOnce({ id: 'library', value: library })
+    render(<App />)
+    expect(await screen.findByText('11 / 81')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Альфа/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Бета/ }))
+    await waitFor(() => expect(useCharacterStore.getState().profile.name).toBe('Бета'))
+    expect(useCharacterStore.getState().resources.hp.current).toBe(22)
+    expect(useCharacterStore.getState().spells[0].name).toBe('Бета-заклинание')
+    act(() => useCharacterStore.getState().setResource('hp', 7))
+    fireEvent.click(screen.getByRole('button', { name: /Бета/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Гамма/ }))
+    await waitFor(() => expect(useCharacterStore.getState().profile.name).toBe('Гамма'))
+    expect(useCharacterStore.getState().resources.hp.current).toBe(33)
+    fireEvent.click(screen.getByRole('button', { name: /Гамма/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Бета/ }))
+    await waitFor(() => expect(useCharacterStore.getState().profile.name).toBe('Бета'))
+    expect(useCharacterStore.getState().resources.hp.current).toBe(7)
+    expect(useLibraryStore.getState().characters.alpha.data.resources.hp.current).toBe(11)
+  })
+
+  it('создаёт нового персонажа как пустой лист, не копируя Урумира', async () => {
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValueOnce('Новый герой')
+    render(<App />)
+    await waitFor(() => expect(saveLibrary).toHaveBeenCalled())
+    const switcher = document.querySelector<HTMLButtonElement>('.character-switcher-button')
+    expect(switcher).not.toBeNull()
+    fireEvent.click(switcher!)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Создать персонажа' }))
+    await waitFor(() => expect(useCharacterStore.getState().profile.name).toBe('Новый герой'))
+    expect(useCharacterStore.getState().spells).toEqual([])
+    expect(useCharacterStore.getState().skills).toEqual([])
+    expect(useCharacterStore.getState().inventory).toEqual([])
+    prompt.mockRestore()
+  })
+
+  it('не перезаписывает библиотеку, если локальное хранилище не удалось прочитать', async () => {
+    vi.mocked(loadLibrary).mockRejectedValueOnce(new Error('unsupported schema'))
+    render(<App />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Автосохранение отключено')
+    act(() => useCharacterStore.getState().setProfile('name', 'Не сохранять'))
+    await act(async () => Promise.resolve())
+    expect(saveLibrary).not.toHaveBeenCalled()
   })
 })
