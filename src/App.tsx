@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronDown, Copy, Dices, Download, FileArchive, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Swords, Trash2, Upload, UserRound, Users, WandSparkles, X, type LucideIcon } from 'lucide-react'
 import { createJsonBackup, createLibraryBackup, materializeImportedCharacter, parseJsonBackup, restoreLibraryBackup, type BackupScope, type PreparedBackupImport } from './backup'
 import { cloneImage, loadImage, loadImages, loadLibrary, removeImages, saveImage, saveImages, saveLibrary, type ImageRecord } from './db'
@@ -66,7 +66,16 @@ function App() {
   const [charactersOpen, setCharactersOpen] = useState(false)
   const [libraryBusy, setLibraryBusy] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
+  const libraryNoticeTimer = useRef<number | null>(null)
+  const showLibraryNotice = useCallback((message: string, duration = 0) => {
+    if (libraryNoticeTimer.current !== null) window.clearTimeout(libraryNoticeTimer.current)
+    libraryNoticeTimer.current = null
+    setLibraryNotice(message)
+    if (duration > 0) libraryNoticeTimer.current = window.setTimeout(() => { setLibraryNotice(''); libraryNoticeTimer.current = null }, duration)
+  }, [])
   const saved = useMemo(() => snapshot(state), [state])
+
+  useEffect(() => () => { if (libraryNoticeTimer.current !== null) window.clearTimeout(libraryNoticeTimer.current) }, [])
 
   useEffect(() => {
     loadLibrary()
@@ -88,8 +97,8 @@ function App() {
     if (!hydrated || !storageReady) return
     const next = syncActiveCharacter(librarySnapshot(), saved)
     replaceLibrary(next)
-    void saveLibrary(next).catch(() => setLibraryNotice('Не удалось сохранить библиотеку персонажей. Предыдущая копия не удалена.'))
-  }, [hydrated, replaceLibrary, saved, storageReady])
+    void saveLibrary(next).catch(() => showLibraryNotice('Не удалось сохранить библиотеку персонажей. Предыдущая копия не удалена.'))
+  }, [hydrated, replaceLibrary, saved, showLibraryNotice, storageReady])
 
   useEffect(() => {
     document.documentElement.dataset.theme = state.settings.themeMode
@@ -118,8 +127,8 @@ function App() {
       const character = characterForActivation(next, id)
       if (!character) return
       await saveLibrary(next)
-      replaceLibrary(next); setCharacter(character); state.setEditing(false); setLibraryNotice('Персонаж переключён.')
-    } catch { setLibraryNotice('Не удалось переключить персонажа: текущие данные оставлены открытыми.') }
+      replaceLibrary(next); setCharacter(character); state.setEditing(false); showLibraryNotice('Персонаж переключён.', 3200)
+    } catch { showLibraryNotice('Не удалось переключить персонажа: текущие данные оставлены открытыми.') }
     finally { setLibraryBusy(false) }
   }
 
@@ -134,8 +143,8 @@ function App() {
       await saveLibrary(next); replaceLibrary(next)
       const character = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null
       if (character) setCharacter(character)
-      setLibraryNotice(`Создан персонаж «${name}».`)
-    } catch { setLibraryNotice('Не удалось создать персонажа.') }
+      showLibraryNotice(`Создан персонаж «${name}».`)
+    } catch { showLibraryNotice('Не удалось создать персонажа.') }
     finally { setLibraryBusy(false) }
   }
 
@@ -150,8 +159,8 @@ function App() {
       const next = renameCharacter(persisted, id, name)
       await saveLibrary(next); replaceLibrary(next)
       if (next.activeCharacterId === id) { const data = characterForActivation(next, id); if (data) setCharacter(data) }
-      setLibraryNotice(`Персонаж переименован в «${name}».`)
-    } catch { setLibraryNotice('Не удалось переименовать персонажа.') }
+      showLibraryNotice(`Персонаж переименован в «${name}».`)
+    } catch { showLibraryNotice('Не удалось переименовать персонажа.') }
     finally { setLibraryBusy(false) }
   }
 
@@ -169,8 +178,8 @@ function App() {
       await saveLibrary(next); replaceLibrary(next)
       const data = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null
       if (data) setCharacter(data)
-      setLibraryNotice(`Создана независимая копия «${source.name}».`)
-    } catch { setLibraryNotice('Не удалось дублировать персонажа.') }
+      showLibraryNotice(`Создана независимая копия «${source.name}».`)
+    } catch { showLibraryNotice('Не удалось дублировать персонажа.') }
     finally { setLibraryBusy(false) }
   }
 
@@ -188,10 +197,10 @@ function App() {
       await saveLibrary(next); replaceLibrary(next)
       const data = next.activeCharacterId ? characterForActivation(next, next.activeCharacterId) : null
       if (data) setCharacter(data)
-      setLibraryNotice(`Персонаж «${source.name}» удалён.`)
+      showLibraryNotice(`Персонаж «${source.name}» удалён.`)
       const used = new Set(Object.values(next.characters).flatMap((character) => collectCharacterImageIds(character.data)))
-      void removeImages(removedIds.filter((imageId) => !used.has(imageId))).catch(() => setLibraryNotice(`Персонаж «${source.name}» удалён, но часть неиспользуемых изображений очистить не удалось.`))
-    } catch { setLibraryNotice('Не удалось удалить персонажа. Существующая библиотека сохранена.') }
+      void removeImages(removedIds.filter((imageId) => !used.has(imageId))).catch(() => showLibraryNotice(`Персонаж «${source.name}» удалён, но часть неиспользуемых изображений очистить не удалось.`))
+    } catch { showLibraryNotice('Не удалось удалить персонажа. Существующая библиотека сохранена.') }
     finally { setLibraryBusy(false) }
   }
 
@@ -340,8 +349,8 @@ function CharacterSwitcher({ library, busy, onSwitch, onManage, onCreate }: { li
     return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeOnEscape) }
   }, [open])
   return <div className="character-switcher" ref={rootRef}>
-    <button ref={triggerRef} className="character-switcher-button" type="button" aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={() => setOpen(!open)}>{active ? <><Avatar imageId={active.data.profile.avatarId} name={active.name} className="switcher-avatar" /><span><strong>{active.name}</strong><small>{active.data.profile.classBackground || `Уровень ${active.data.level}`}</small></span></> : <><Users size={18} /><span><strong>Нет персонажа</strong><small>Создайте первого</small></span></>}<ChevronDown size={16} /></button>
-    {open && <div className="character-menu" role="menu">{library.characterOrder.map((id) => { const character = library.characters[id]; if (!character) return null; return <button type="button" role="menuitem" className={id === library.activeCharacterId ? 'active' : ''} key={id} onClick={() => { setOpen(false); void onSwitch(id) }}><Avatar imageId={character.data.profile.avatarId} name={character.name} className="menu-avatar" /><span><strong>{character.name}</strong><small>{character.data.profile.classBackground || `Уровень ${character.data.level}`} · HP {character.data.resources.hp.current}/{character.data.resources.hp.max}</small></span>{id === library.activeCharacterId && <b>Открыт</b>}</button> })}<div className="character-menu-actions"><button type="button" role="menuitem" onClick={() => { setOpen(false); onManage() }}><Users size={15} />Управление персонажами</button><button type="button" role="menuitem" onClick={() => { setOpen(false); void onCreate() }}><Plus size={15} />Создать персонажа</button></div></div>}
+    <button ref={triggerRef} className="character-switcher-button" type="button" aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={() => setOpen(!open)}>{active ? <><Avatar imageId={active.data.profile.avatarId} name={active.name} className="switcher-avatar" /><span><strong>{active.name}</strong></span></> : <><Users size={18} /><span><strong>Нет персонажа</strong></span></>}<ChevronDown size={16} /></button>
+    {open && <div className="character-menu" role="menu">{library.characterOrder.map((id) => { const character = library.characters[id]; if (!character) return null; return <button type="button" role="menuitem" className={id === library.activeCharacterId ? 'active' : ''} key={id} onClick={() => { setOpen(false); void onSwitch(id) }}><Avatar imageId={character.data.profile.avatarId} name={character.name} className="menu-avatar" /><span><strong>{character.name}</strong></span></button> })}<div className="character-menu-actions"><button type="button" role="menuitem" onClick={() => { setOpen(false); onManage() }}><Users size={15} />Управление персонажами</button><button type="button" role="menuitem" onClick={() => { setOpen(false); void onCreate() }}><Plus size={15} />Создать персонажа</button></div></div>}
   </div>
 }
 
