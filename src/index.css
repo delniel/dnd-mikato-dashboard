@@ -14,6 +14,10 @@
   --accent-soft: #5b202744;
   --accent-contrast: #ffffff;
   --focus: #71d2f4;
+  --accent-visual-glow: color-mix(in srgb, var(--accent) 48%, #fdf7f0);
+  --accent-visual-mid: color-mix(in srgb, var(--accent) 60%, #131419);
+  --accent-visual-deep: color-mix(in srgb, var(--accent) 32%, #08090c);
+  --accent-visual-border: color-mix(in srgb, var(--accent-hover) 78%, #f2ece7);
   color: var(--text);
   background: var(--bg);
   font-family: Georgia, 'Times New Roman', serif;
@@ -256,6 +260,8 @@ h3 { line-height: 1.2; }
 .nav-item.active { box-shadow: inset 2px 0 var(--accent); }
 .card, .hero-card, .profile-grid .field-value, .text-value { border-color: var(--border); background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 97%, var(--accent) 3%), var(--surface)); box-shadow: 0 16px 38px var(--shadow); }
 .hero-card { background: linear-gradient(115deg, color-mix(in srgb, var(--surface) 82%, var(--accent) 18%), var(--surface) 62%); }
+.image-frame, .skill-image { background: radial-gradient(circle at 26% 20%, var(--accent-visual-glow) 0, transparent 33%), linear-gradient(135deg, var(--accent-visual-mid), var(--accent-visual-deep) 65%, var(--surface)); }
+.avatar { border-color: var(--accent-visual-border); box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 25%, var(--shadow)); }
 .button, .counter button, .counter input, .card-actions button, .filter-toggle, .tabs button, .tag-filter button, .theme-options button, .accent-swatch { border-color: var(--border); background: var(--surface-2); color: var(--text); }
 .button.primary { border-color: var(--accent-hover); background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 65%, #111)); color: var(--accent-contrast); }
 .button.primary:hover { background: linear-gradient(135deg, var(--accent-hover), var(--accent)); }

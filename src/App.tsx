@@ -4,12 +4,12 @@ import { cloneImage, db, loadCharacter, loadImage, saveCharacter, saveImage } fr
 import { serializeCharacter, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
 import { useCharacterStore } from './store'
 
-type Page = 'Обзор' | 'Характеристики' | 'Заклинания' | 'Навыки +' | 'Инвентарь' | 'Персонаж' | 'Заметки' | 'Настройки'
+type Page = 'Обзор' | 'Характеристики' | 'Заклинания и Способности' | 'Навыки +' | 'Инвентарь' | 'Персонаж' | 'Заметки' | 'Настройки'
 
 const pages: { page: Page; icon: LucideIcon }[] = [
   { page: 'Обзор', icon: Shield },
   { page: 'Характеристики', icon: Sparkles },
-  { page: 'Заклинания', icon: WandSparkles },
+  { page: 'Заклинания и Способности', icon: WandSparkles },
   { page: 'Навыки +', icon: Star },
   { page: 'Инвентарь', icon: Package },
   { page: 'Персонаж', icon: UserRound },
@@ -71,7 +71,7 @@ function App() {
     ? <Overview />
     : page === 'Характеристики'
       ? <Characteristics />
-      : page === 'Заклинания'
+      : page === 'Заклинания и Способности'
         ? <SpellsPage />
         : page === 'Навыки +'
           ? <SkillsPage />

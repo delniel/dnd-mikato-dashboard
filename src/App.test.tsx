@@ -15,7 +15,7 @@ vi.mock('./db', () => ({
   saveImage: vi.fn(async () => 'uploaded-image'),
 }))
 
-const navigate = (page: string) => fireEvent.click(screen.getAllByRole('button', { name: page })[0])
+const navigate = (page: string) => fireEvent.click(screen.getAllByRole('button', { name: page === 'Заклинания' ? 'Заклинания и Способности' : page })[0])
 
 describe('игровые представления листа', () => {
   beforeEach(() => {
@@ -78,6 +78,7 @@ describe('игровые представления листа', () => {
 
   it('фильтрует заклинания только по избранному', async () => {
     render(<App />)
+    expect(screen.getAllByRole('button', { name: 'Заклинания и Способности' })).toHaveLength(2)
     navigate('Заклинания')
     const first = useCharacterStore.getState().spells[0]
     const second = useCharacterStore.getState().spells[1]
