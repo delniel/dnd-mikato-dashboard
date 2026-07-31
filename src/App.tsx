@@ -62,11 +62,14 @@ function App() {
   const [hydrated, setHydrated] = useState(false)
   const [storageReady, setStorageReady] = useState(false)
   const [storageError, setStorageError] = useState('')
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [diceOpen, setDiceOpen] = useState(false)
   const [charactersOpen, setCharactersOpen] = useState(false)
   const [libraryBusy, setLibraryBusy] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
   const libraryNoticeTimer = useRef<number | null>(null)
+  const autosaveTimer = useRef<number | null>(null)
+  const autosaveRequest = useRef(0)
   const showLibraryNotice = useCallback((message: string, duration = 0) => {
     if (libraryNoticeTimer.current !== null) window.clearTimeout(libraryNoticeTimer.current)
     libraryNoticeTimer.current = null
@@ -75,7 +78,7 @@ function App() {
   }, [])
   const saved = useMemo(() => snapshot(state), [state])
 
-  useEffect(() => () => { if (libraryNoticeTimer.current !== null) window.clearTimeout(libraryNoticeTimer.current) }, [])
+  useEffect(() => () => { if (libraryNoticeTimer.current !== null) window.clearTimeout(libraryNoticeTimer.current); if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current) }, [])
 
   useEffect(() => {
     loadLibrary()
@@ -95,9 +98,20 @@ function App() {
 
   useEffect(() => {
     if (!hydrated || !storageReady) return
+    const request = ++autosaveRequest.current
+    if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current)
+    queueMicrotask(() => { if (request === autosaveRequest.current) setAutosaveStatus('saving') })
     const next = syncActiveCharacter(librarySnapshot(), saved)
     replaceLibrary(next)
-    void saveLibrary(next).catch(() => showLibraryNotice('Не удалось сохранить библиотеку персонажей. Предыдущая копия не удалена.'))
+    void saveLibrary(next).then(() => {
+      if (request !== autosaveRequest.current) return
+      setAutosaveStatus('saved')
+      autosaveTimer.current = window.setTimeout(() => { if (request === autosaveRequest.current) setAutosaveStatus('idle') }, 3200)
+    }).catch(() => {
+      if (request !== autosaveRequest.current) return
+      setAutosaveStatus('error')
+      showLibraryNotice('Не удалось сохранить библиотеку персонажей. Предыдущая копия не удалена.')
+    })
   }, [hydrated, replaceLibrary, saved, showLibraryNotice, storageReady])
 
   useEffect(() => {
@@ -293,6 +307,7 @@ function App() {
         {!hydrated ? <EmptyState title="Загрузка библиотеки…" text="Восстанавливаем локальные данные персонажей." /> : library.activeCharacterId ? <div key={library.activeCharacterId}>{content}</div> : <EmptyState title="Нет персонажей" text="Создайте первого персонажа, чтобы открыть лист." />}
       </section>
       <nav className="bottom-nav"><Navigation active={page} onSelect={selectPage} compact /></nav>
+      {autosaveStatus !== 'idle' && <p className={`autosave-status ${autosaveStatus}`} role={autosaveStatus === 'error' ? 'alert' : 'status'}>{autosaveStatus === 'saving' ? <><Save size={15} />Сохраняется…</> : autosaveStatus === 'saved' ? <><Save size={15} />Сохранено локально</> : <>Не удалось сохранить</>}</p>}
       <button className="dice-fab" type="button" aria-label="Открыть бросок кубиков" onClick={() => setDiceOpen(true)}><Dices /></button>
       {diceOpen && <DicePanel onClose={() => setDiceOpen(false)} />}
       {charactersOpen && <CharacterManager library={library} busy={libraryBusy} onClose={() => setCharactersOpen(false)} onOpen={(id) => { void activate(id); setCharactersOpen(false) }} onCreate={() => void createNewCharacter()} onRename={(id) => void renameManagedCharacter(id)} onDuplicate={(id) => void duplicateManagedCharacter(id)} onDelete={(id) => void deleteManagedCharacter(id)} />}

@@ -29,6 +29,11 @@ vi.mock('./backup', () => ({
 const navigate = (page: string) => fireEvent.click(screen.getAllByRole('button', { name: page === 'Заклинания' ? 'Заклинания и Способности' : page })[0])
 
 describe('игровые представления листа', () => {
+  it('показывает статус успешного автосохранения', async () => {
+    render(<App />)
+    expect(await screen.findByText('Сохранено локально')).toBeInTheDocument()
+  })
+
   beforeEach(() => {
     const initial = createInitialCharacter()
     useCharacterStore.setState({ ...initial, editing: false })
