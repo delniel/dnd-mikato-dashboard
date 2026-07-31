@@ -12,10 +12,10 @@ describe('автоматические модификаторы навыков',
   })
 
   it('добавляет бонус владения ноль, один или два раза', () => {
-    expect(calculateSkillBonus('+3', 0)).toBe(0)
-    expect(calculateSkillBonus('+3', 1)).toBe(3)
-    expect(calculateSkillBonus('+3', 2)).toBe(6)
-    expect(calculateSkillBonus('+4', 2)).toBe(8)
+    expect(calculateSkillBonus('20', '+3', 0)).toBe(5)
+    expect(calculateSkillBonus('20', '+3', 1)).toBe(8)
+    expect(calculateSkillBonus('20', '+3', 2)).toBe(11)
+    expect(calculateSkillBonus('20', '+4', 2)).toBe(13)
   })
 
   it('циклически переключает владение 0 → 1 → 2 → 0', () => {
@@ -28,6 +28,7 @@ describe('автоматические модификаторы навыков',
     const migrated = migrateCharacter({ profile: { proficiency: '+3' }, characteristics: [{ id: 'wisdom', name: 'Мудрость', score: '20', check: '+5', save: '+5', skills: [{ id: 'survival', name: 'Выживание', bonus: '+3' }, { id: 'perception', name: 'Восприятие', bonus: '+6' }] }] })
     expect(migrated.characteristics[0].skills.map((skill) => skill.proficiencyRank)).toEqual([1, 2])
     expect(migrated.characteristics[0].skills.map((skill) => skill.bonus)).toEqual(['', ''])
+    expect(migrated.characteristics[0].check).toBe('')
   })
 })
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CharacterState } from './domain'
+import { characteristicModifier, type CharacterState } from './domain'
 
 export const combatCategories = ['positive', 'negative', 'special'] as const
 export const combatOperations = ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'SET'] as const
@@ -157,7 +157,7 @@ export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'char
   for (const characteristic of state.characteristics) {
     const fields: Array<['score' | 'check' | 'save', string]> = [['score', 'Значение'], ['check', 'Проверка'], ['save', 'Спасбросок']]
     for (const [field, label] of fields) {
-      const baseValue = parseCombatNumber(characteristic[field])
+      const baseValue = field === 'check' ? parseCombatNumber(characteristic.check) ?? characteristicModifier(characteristic.score) : parseCombatNumber(characteristic[field])
       if (baseValue !== null) targets.push({ id: `characteristic.${characteristic.id}.${field}`, label: `${characteristic.name}: ${label}`, group: 'ability', baseValue })
     }
   }

@@ -54,7 +54,7 @@ const defaultCharacteristics: Characteristic[] = characteristics.map((value) => 
   id: value.name,
   name: value.name,
   score: value.score,
-  check: value.check,
+  check: '',
   save: value.save,
   skills: value.skills.map((label) => {
     const match = label.match(/^(.*?)(?:\s+([+−-]\d+))?$/)

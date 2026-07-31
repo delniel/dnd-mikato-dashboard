@@ -100,8 +100,10 @@ export function characteristicModifier(score: string | number | undefined): numb
   return Math.floor((bounded - 10) / 2)
 }
 
-export function calculateSkillBonus(proficiency: string | number | undefined, rank: SkillProficiencyRank): number {
-  return (parseRuleNumber(proficiency) ?? 0) * rank
+export function calculateSkillBonus(score: string | number | undefined, proficiency: string | number | undefined, rank: SkillProficiencyRank): number | null {
+  const modifier = characteristicModifier(score)
+  if (modifier === null) return null
+  return modifier + (parseRuleNumber(proficiency) ?? 0) * rank
 }
 
 export function nextSkillProficiencyRank(rank: SkillProficiencyRank): SkillProficiencyRank {
@@ -300,11 +302,14 @@ const migrateCharacteristics = (value: unknown, fallback: Characteristic[], prof
         proficiencyRank: explicitRank === 1 || explicitRank === 2 ? explicitRank : explicitRank === 0 ? 0 : inferredRank,
       }
     })
+    const score = asString(rawCharacteristic.score)
+    const rawCheck = asString(rawCharacteristic.check)
+    const automaticCheck = characteristicModifier(score)
     return {
       id,
       name: asString(rawCharacteristic.name, defaultCharacteristic?.name ?? ''),
-      score: asString(rawCharacteristic.score),
-      check: asString(rawCharacteristic.check),
+      score,
+      check: automaticCheck !== null && parseRuleNumber(rawCheck) === automaticCheck ? '' : rawCheck,
       save: asString(rawCharacteristic.save),
       skills,
     }
