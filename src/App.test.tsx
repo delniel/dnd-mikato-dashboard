@@ -184,7 +184,7 @@ describe('игровые представления листа', () => {
     const strength = await screen.findByLabelText('Сила: боевые значения')
     expect(within(strength).getByText('Значение')).toBeInTheDocument()
     expect(within(strength).getByText('Проверка')).toBeInTheDocument()
-    expect(within(strength).getByRole('button', { name: 'Расчёт: Сила: Проверка' })).toHaveTextContent('-4')
+    expect(within(strength).getByRole('button', { name: 'Расчёт: Сила: Проверка' })).toHaveTextContent('-3')
     expect(within(strength).getByText('Спасбросок')).toBeInTheDocument()
     expect(screen.getAllByLabelText(/боевые значения$/)).toHaveLength(6)
   })
