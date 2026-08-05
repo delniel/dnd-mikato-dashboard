@@ -157,7 +157,12 @@ export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'char
   for (const characteristic of state.characteristics) {
     const fields: Array<['score' | 'check' | 'save', string]> = [['score', 'Значение'], ['check', 'Проверка'], ['save', 'Спасбросок']]
     for (const [field, label] of fields) {
-      const baseValue = field === 'check' ? parseCombatNumber(characteristic.check) ?? characteristicModifier(characteristic.score) : parseCombatNumber(characteristic[field])
+      const modifier = characteristicModifier(characteristic.score)
+      const baseValue = field === 'check'
+        ? parseCombatNumber(characteristic.check) ?? modifier
+        : field === 'save' && modifier !== null
+          ? modifier + (parseCombatNumber(characteristic.save) ?? 0)
+          : parseCombatNumber(characteristic[field])
       if (baseValue !== null) targets.push({ id: `characteristic.${characteristic.id}.${field}`, label: `${characteristic.name}: ${label}`, group: 'ability', baseValue })
     }
   }

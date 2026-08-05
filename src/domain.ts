@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { createInitialCharacter } from './data'
 import { combatEffectSchema, migrateCombatEffects, type CombatEffect } from './combat'
 
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 export const experienceThresholds = [20, 45, 75, 110, 150, 195, 245, 300, 360, 425, 495, 570, 650, 735, 825, 920, 1020, 1125, 1235, 1350, 1470, 1595, 1725, 1860, 2000]
 
 export type ResourceKey = 'hp' | 'mana' | 'superiority'
@@ -274,7 +274,7 @@ const migrateNotes = (value: unknown): Note[] => {
   })
 }
 
-const migrateCharacteristics = (value: unknown, fallback: Characteristic[], proficiency: string): Characteristic[] => {
+const migrateCharacteristics = (value: unknown, fallback: Characteristic[], proficiency: string, migrateLegacySave: boolean): Characteristic[] => {
   if (!Array.isArray(value)) return fallback
 
   return value.filter(isRecord).map((rawCharacteristic) => {
@@ -305,12 +305,17 @@ const migrateCharacteristics = (value: unknown, fallback: Characteristic[], prof
     const score = asString(rawCharacteristic.score)
     const rawCheck = asString(rawCharacteristic.check)
     const automaticCheck = characteristicModifier(score)
+    const rawSave = asString(rawCharacteristic.save)
+    const parsedSave = parseRuleNumber(rawSave)
+    const save = migrateLegacySave && automaticCheck !== null && parsedSave !== null
+      ? String(parsedSave - automaticCheck)
+      : rawSave
     return {
       id,
       name: asString(rawCharacteristic.name, defaultCharacteristic?.name ?? ''),
       score,
       check: automaticCheck !== null && parseRuleNumber(rawCheck) === automaticCheck ? '' : rawCheck,
-      save: asString(rawCharacteristic.save),
+      save,
       skills,
     }
   })
@@ -378,7 +383,7 @@ export function migrateCharacter(input: unknown): CharacterState {
           accentColor: ['red', 'blue', 'cyan', 'green', 'purple', 'pink', 'yellow'].includes(asString(input.settings.accentColor)) ? asString(input.settings.accentColor) as AccentColor : 'red',
         }
       : defaults.settings,
-    characteristics: migrateCharacteristics(input.characteristics, defaults.characteristics, profile.proficiency),
+    characteristics: migrateCharacteristics(input.characteristics, defaults.characteristics, profile.proficiency, typeof input.schemaVersion !== 'number' || input.schemaVersion < SCHEMA_VERSION),
     languages: textEntries(input.languages, defaults.languages),
     proficiencies: textEntries(input.proficiencies, defaults.proficiencies),
     elements: textEntries(input.elements ?? oldProfile.elements, defaults.elements),
