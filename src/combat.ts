@@ -137,21 +137,21 @@ export function parseCombatNumber(value: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const profileTargets: Array<{ key: string; label: string; unit?: string; nonNegative?: boolean }> = [
+const profileTargets: Array<{ key: string; label: string; unit?: string; nonNegative?: boolean; baseKey?: string }> = [
   { key: 'armorClass', label: 'Класс доспеха' },
   { key: 'speed', label: 'Скорость', unit: ' фут.', nonNegative: true },
-  { key: 'attackBonus', label: 'Бросок атаки' },
+  { key: 'attackBonus', label: 'Бросок атаки', baseKey: 'proficiency' },
   { key: 'damageBonus', label: 'Бонус урона' },
   { key: 'meleeRange', label: 'Дальность ближней атаки', unit: ' фут.', nonNegative: true },
   { key: 'rangedRange', label: 'Дальность дальней атаки', unit: ' фут.', nonNegative: true },
-  { key: 'spellAttackBonus', label: 'Бонус атаки заклинанием' },
+  { key: 'spellAttackBonus', label: 'Бонус атаки заклинанием', baseKey: 'proficiency' },
   { key: 'spellSaveDc', label: 'Сложность спасброска заклинаний' },
 ]
 
 export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'characteristics'>): CombatTarget[] {
   const targets: CombatTarget[] = []
   for (const definition of profileTargets) {
-    const baseValue = parseCombatNumber(state.profile[definition.key])
+    const baseValue = parseCombatNumber(state.profile[definition.baseKey ?? definition.key])
     if (baseValue !== null) targets.push({ id: `profile.${definition.key}`, label: definition.label, group: 'combat', baseValue, unit: definition.unit, nonNegative: definition.nonNegative })
   }
   for (const characteristic of state.characteristics) {

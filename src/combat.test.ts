@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { calculateCombatTarget, combatModifierSchema, formatSignedCombatNumber, migrateCombatEffects, parseCombatNumber, type CombatEffect, type CombatTarget } from './combat'
+import { buildCombatTargets, calculateCombatTarget, combatModifierSchema, formatSignedCombatNumber, migrateCombatEffects, parseCombatNumber, type CombatEffect, type CombatTarget } from './combat'
+import { createInitialCharacter } from './data'
 
 const armorClass: CombatTarget = { id: 'profile.armorClass', label: 'Класс доспеха', group: 'combat', baseValue: 17 }
 const speed: CombatTarget = { id: 'profile.speed', label: 'Скорость', group: 'combat', baseValue: 30, nonNegative: true }
@@ -25,6 +26,19 @@ describe('чистый расчёт боевых параметров', () => {
     expect(formatSignedCombatNumber(-4)).toBe('-4')
     expect(formatSignedCombatNumber(0)).toBe('0')
     expect(formatSignedCombatNumber(13)).toBe('+13')
+  })
+
+  it('берёт базу бросков атаки из бонуса владения', () => {
+    const state = createInitialCharacter()
+    state.profile.proficiency = '+4'
+    state.profile.attackBonus = '+3'
+    state.profile.spellAttackBonus = '+3'
+
+    const bases = buildCombatTargets(state)
+      .filter((target) => target.id === 'profile.attackBonus' || target.id === 'profile.spellAttackBonus')
+      .map((target) => target.baseValue)
+
+    expect(bases).toEqual([4, 4])
   })
 
   it('добавляет +4 к КД 17, не изменяя базовое значение', () => {

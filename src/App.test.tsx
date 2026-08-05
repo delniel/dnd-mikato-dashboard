@@ -68,6 +68,20 @@ describe('игровые представления листа', () => {
     expect(screen.getByText('Личная заметка')).toBeInTheDocument()
   })
 
+  it('подставляет бонус владения в базу бросков атаки', async () => {
+    const initial = createInitialCharacter()
+    initial.profile.proficiency = '+4'
+    initial.profile.attackBonus = '+3'
+    initial.profile.spellAttackBonus = '+3'
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+
+    navigate('Бой')
+    await screen.findByRole('heading', { name: 'Боевые параметры' })
+    expect(within(screen.getByRole('button', { name: 'Расчёт: Бросок атаки' })).getByText('База: 4')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: 'Расчёт: Бонус атаки заклинанием' })).getByText('База: 4')).toBeInTheDocument()
+  })
+
   it('восстанавливает ману на величину из боевых резервов', async () => {
     const initial = createInitialCharacter()
     initial.profile.manaRecovery = '+30'
