@@ -1,7 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import { spells as seededSpells } from './data'
 import { migrateCharacter, SCHEMA_VERSION, type CharacterState } from './domain'
-import { collectCharacterImageIds, createCharacterLibrary, migrateCharacterLibrary, type CharacterLibrary } from './library'
+import { applyLibrarySettings, collectCharacterImageIds, createCharacterLibrary, migrateCharacterLibrary, type CharacterLibrary } from './library'
 type Snapshot = { id: 'character' | 'library'; value: unknown }
 export type ImageRecord = { id: string; blob: Blob; updatedAt: number; characterId?: string }
 const mergeSeededSpells = (value: unknown, includeMissing = false): CharacterState => {
@@ -28,7 +28,7 @@ export const normalizeLibrary = (value: unknown): CharacterLibrary => {
     // Обычная загрузка не должна возвращать удалённые заклинания и менять
     // пользовательские записи. Синхронизация исходных данных выполняется
     // только одноразовыми миграциями БД ниже.
-    characters: Object.fromEntries(Object.entries(library.characters).map(([id, character]) => [id, { ...character, data: { ...migrateCharacter(character.data), settings: library.settings } }])),
+    characters: Object.fromEntries(Object.entries(library.characters).map(([id, character]) => [id, { ...character, data: applyLibrarySettings(migrateCharacter(character.data), library.settings) }])),
   }
 }
 class CharacterDatabase extends Dexie {

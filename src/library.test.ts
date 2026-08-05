@@ -40,6 +40,7 @@ describe('библиотека персонажей', () => {
     expect(synced.characters.b.data.settings.accentColor).toBe('blue')
     expect(synced.settings).toMatchObject({ themeMode: 'light', accentColor: 'red' })
     expect(characterForActivation(synced, 'b')?.settings).toMatchObject({ themeMode: 'light', accentColor: 'blue' })
+    expect(normalizeLibrary(synced).characters.a.data.settings).toMatchObject({ themeMode: 'light', accentColor: 'green' })
   })
 
   it('дублирует глубоко, переименовывает и выбирает следующего после удаления', () => {
