@@ -29,7 +29,7 @@ describe('автоматические модификаторы навыков',
     expect(migrated.characteristics[0].skills.map((skill) => skill.proficiencyRank)).toEqual([1, 2])
     expect(migrated.characteristics[0].skills.map((skill) => skill.bonus)).toEqual(['', ''])
     expect(migrated.characteristics[0].check).toBe('')
-    expect(migrated.characteristics[0].save).toBe('0')
+    expect(migrated.characteristics[0].save).toBe('')
   })
 })
 
@@ -195,7 +195,7 @@ describe('кубики и миграция', () => {
       settings: { levelUpBehavior: 'carry', allowNegativeMana: false },
     }
     const migrated = migrateCharacter(old)
-    expect(migrated.schemaVersion).toBe(7)
+    expect(migrated.schemaVersion).toBe(8)
     expect(migrated.profile.avatarId).toBe('avatar-1')
     expect(migrated.profile.masteryMagic).toBe('Мастерство и Магия')
     expect(migrated.resources.hp.current).toBe(40)
@@ -258,7 +258,7 @@ describe('кубики и миграция', () => {
     expect(restored.spells.length).toBeGreaterThan(0)
     expect(restored.notes).toEqual([])
     expect(restored.combatEffects).toEqual([])
-    expect(restoreCharacter(serializeCharacter(base())).schemaVersion).toBe(7)
+    expect(restoreCharacter(serializeCharacter(base())).schemaVersion).toBe(8)
   })
 
   it('сохраняет боевые эффекты при экспорте и импорте', () => {

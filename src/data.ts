@@ -5,7 +5,7 @@ export type Skill = PersistentSkill
 export type Item = PersistentItem
 
 export const initialCharacter: CharacterState = {
-  schemaVersion: 7,
+  schemaVersion: 8,
   profile: { playerName: 'Дель', name: 'Урумир', classBackground: 'Возвращённый к Жизни Магией, рождённый магией', className: '', proficiency: '+3', armorClass: '23', initiative: '', spellCapacity: '9 + 4', hitDie: '1d4', superiorityDie: '1d8', speed: '30', manaRecovery: '+30', mainCharacteristic: 'Телосложение', race: 'Гомункул', raceSubtype: 'Алхимический Гомункул', background: 'Возвращённый к Жизни Магией, рождённый магией', alignment: 'Хаотично Нейтральный', size: 'Средний', powerType: 'Магия', masteryMagic: 'Магия', profession: '', age: '6 лет', height: '160 см', weight: '20', eyes: 'Голубые', hair: 'Красные', skin: 'Светлая', traits: 'Я считаю, что смерть — это биологический процесс.', ideals: 'Познание: Я хочу понять, почему я живу.', bonds: 'Узнать, кто я, что я и кто меня создал.', weaknesses: '', backstory: '', characterNotes: '', avatarId: '' },
   resources: { hp: { current: 81, max: 81, temporary: 0 }, mana: { current: 300, max: 300 }, superiority: { current: 2, max: 2, dieType: '1d8' } }, experience: 10, level: 11, inspiration: false,
   senses: { 'Восприятие': '15', 'Проницательность': '15', 'Анализ': '10' }, favorites: [], notes: [], combatEffects: [], settings: { levelUpBehavior: 'carry', allowNegativeMana: false, themeMode: 'dark', accentColor: 'red' }, characteristics: [], languages: [], proficiencies: [], elements: [], spells: [], skills: [], inventory: [], currencies: { PP: 0, GP: 70, SP: 0, CP: 0 }, diceHistory: [], extras: {},
@@ -45,9 +45,9 @@ export const inventory: Item[] = [
 ]
 
 export const characteristics = [
-  { name: 'Сила', score: '4', check: '−4', save: '+3', skills: ['Атлетика'] }, { name: 'Ловкость', score: '14', check: '+2', save: '+0', skills: ['Акробатика', 'Ловкость рук', 'Скрытность'] },
-  { name: 'Телосложение', score: '30', check: '+10', save: '+3', skills: [] }, { name: 'Интеллект', score: '8', check: '−1', save: '+0', skills: ['Анализ +3', 'История', 'Магия', 'Природа', 'Религия'] },
-  { name: 'Мудрость', score: '20', check: '+5', save: '+0', skills: ['Восприятие', 'Выживание +3', 'Медицина', 'Проницательность +3', 'Уход за животными'] }, { name: 'Харизма', score: '8', check: '−1', save: '+0', skills: ['Выступление +6', 'Запугивание', 'Обман', 'Убеждение'] },
+  { name: 'Сила', score: '4', check: '−4', save: '+0', skills: ['Атлетика'] }, { name: 'Ловкость', score: '14', check: '+2', save: '', skills: ['Акробатика', 'Ловкость рук', 'Скрытность'] },
+  { name: 'Телосложение', score: '30', check: '+10', save: '+13', skills: [] }, { name: 'Интеллект', score: '8', check: '−1', save: '', skills: ['Анализ +3', 'История', 'Магия', 'Природа', 'Религия'] },
+  { name: 'Мудрость', score: '20', check: '+5', save: '', skills: ['Восприятие', 'Выживание +3', 'Медицина', 'Проницательность +3', 'Уход за животными'] }, { name: 'Харизма', score: '8', check: '−1', save: '', skills: ['Выступление +6', 'Запугивание', 'Обман', 'Убеждение'] },
 ]
 
 const defaultCharacteristics: Characteristic[] = characteristics.map((value) => ({
