@@ -501,7 +501,7 @@ function Overview() {
     <section className="resource-grid">
       <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" editMaximum />
       <ResourceCard title="Мана" caption="Энергия" color="mana" resourceKey="mana" editMaximum />
-      <ResourceCard title="Превосходство" caption="Ресурс" color="bone" resourceKey="superiority" />
+      <ResourceCard title="Превосходство" caption="Ресурс" color="bone" resourceKey="superiority" editMaximum />
     </section>
 
     {state.recentAction && <button className="undo-banner" type="button" onClick={state.undo}><ArchiveRestore size={17} />Отменить: {state.recentAction.label}</button>}
