@@ -119,6 +119,11 @@ export function characteristicModifier(score: string | number | undefined): numb
   return Math.floor((bounded - 10) / 2)
 }
 
+export function isCharacteristicScoreOutsideCurrentRange(score: string | number | undefined): boolean {
+  const parsed = parseRuleNumber(score)
+  return parsed !== null && (parsed < 5 || parsed > 30)
+}
+
 export function calculateSkillBonus(score: string | number | undefined, proficiency: string | number | undefined, rank: SkillProficiencyRank): number | null {
   const modifier = characteristicModifier(score)
   if (modifier === null) return null

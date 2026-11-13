@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { adjustPreparedRunes, adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, effectiveProficiency, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, proficiencyBonusForLevel, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
+import { adjustPreparedRunes, adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, effectiveProficiency, isCharacteristicScoreOutsideCurrentRange, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, proficiencyBonusForLevel, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
 
 describe('автоматические модификаторы навыков', () => {
+  it('распознаёт значения характеристик вне актуального диапазона без их изменения', () => {
+    expect(isCharacteristicScoreOutsideCurrentRange(4)).toBe(true)
+    expect(isCharacteristicScoreOutsideCurrentRange(5)).toBe(false)
+    expect(isCharacteristicScoreOutsideCurrentRange(30)).toBe(false)
+    expect(isCharacteristicScoreOutsideCurrentRange(31)).toBe(true)
+    expect(isCharacteristicScoreOutsideCurrentRange('')).toBe(false)
+  })
   it('учитывает готовые руны отдельно от маны и сохраняет их при импорте', () => {
     const state = base()
     const id = state.spells[0].id

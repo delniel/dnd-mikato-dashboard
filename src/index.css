@@ -59,6 +59,7 @@ h2 { line-height: 1.08; }
 h3 { line-height: 1.2; }
 .top-actions { display: flex; align-items: center; gap: 10px; }
 .library-notice { margin: -18px 0 22px; }
+.characteristic-range-warning { margin: 10px 0 0; color: var(--accent); font: 11px/1.4 system-ui; }
 .autosave-status { position: fixed; z-index: 11; bottom: 16px; left: 14px; display: inline-flex; width: 220px; align-items: center; gap: 7px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 10px 26px var(--shadow); color: var(--text); padding: 9px 10px; font: 12px/1.2 system-ui; animation: autosave-enter .18s ease-out; backdrop-filter: blur(12px); }
 .autosave-status.saving { color: var(--muted); }
 .autosave-status.error { border-left-color: #d95c60; color: #ffd2ce; }
