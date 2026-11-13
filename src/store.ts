@@ -4,6 +4,7 @@ import type { CombatEffect } from './combat'
 import {
   changeResource,
   adjustSkillUses,
+  adjustPreparedRunes,
   convertCurrency,
   deductMana,
   deductSuperiority,
@@ -61,6 +62,7 @@ type Store = CharacterState & {
   upsertEntry: (collection: Collection, entry: NamedEntry) => void
   deleteEntry: (collection: Collection, id: string) => void
   upsertSpell: (spell: Spell) => void
+  adjustPreparedRunes: (id: string, delta: number) => boolean
   deleteSpell: (id: string) => void
   upsertSkill: (skill: Skill) => void
   adjustSkillUses: (id: string, delta: number) => boolean
@@ -149,6 +151,12 @@ export const useCharacterStore = create<Store>((set, get) => ({
   upsertEntry: (collection, entry) => set((state) => ({ [collection]: updateList(state[collection], entry) })),
   deleteEntry: (collection, id) => set((state) => ({ [collection]: state[collection].filter((entry) => entry.id !== id) })),
   upsertSpell: (spell) => set((state) => ({ spells: updateList(state.spells, spell) })),
+  adjustPreparedRunes: (id, delta) => {
+    const next = adjustPreparedRunes(get(), id, delta)
+    if (!next) return false
+    set(next)
+    return true
+  },
   deleteSpell: (id) => set((state) => ({ spells: state.spells.filter((spell) => spell.id !== id), favorites: state.favorites.filter((favorite) => favorite !== id) })),
   upsertSkill: (skill) => set((state) => ({ skills: updateList(state.skills, skill) })),
   adjustSkillUses: (id, delta) => {
