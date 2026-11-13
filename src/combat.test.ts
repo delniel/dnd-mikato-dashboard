@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCombatTargets, calculateCombatTarget, combatModifierSchema, formatSignedCombatNumber, migrateCombatEffects, parseCombatNumber, type CombatEffect, type CombatTarget } from './combat'
+import { buildCombatTargets, calculateCombatState, calculateCombatTarget, calculateSpellCombatStats, combatModifierSchema, formatSignedCombatNumber, migrateCombatEffects, parseCombatNumber, type CombatEffect, type CombatTarget } from './combat'
 import { createInitialCharacter } from './data'
 
 const armorClass: CombatTarget = { id: 'profile.armorClass', label: 'Класс доспеха', group: 'combat', baseValue: 17 }
@@ -20,6 +20,28 @@ const effect = (patch: Partial<CombatEffect> = {}): CombatEffect => ({
 })
 
 describe('чистый расчёт боевых параметров', () => {
+  it('учитывает изменение характеристики до 40 и отдельный эффект на сложность заклинания', () => {
+    const state = createInitialCharacter()
+    const characteristic = state.characteristics.find((entry) => entry.name === 'Телосложение')!
+    state.profile.mainCharacteristic = characteristic.name
+    state.profile.proficiency = '+3'
+    state.combatEffects = [effect({ modifiers: [{ id: 'score', target: `characteristic.${characteristic.id}.score`, operation: 'SET', value: 40 }, { id: 'dc', target: 'profile.spellSaveDc', operation: 'ADD', value: 2 }] })]
+    expect(calculateSpellCombatStats('Телосложение', state)).toEqual([{ name: 'Телосложение', proficient: true, attack: 18, saveDc: 28 }])
+    expect(calculateSpellCombatStats('Телосложение', state, false, { attack: '+2', saveDc: '-1' })[0]).toMatchObject({ attack: 20, saveDc: 27 })
+    expect(characteristic.score).toBe('30')
+  })
+
+  it('пересчитывает автоматическую проверку от изменённой характеристики, сохраняя ручной спасбросок', () => {
+    const state = createInitialCharacter()
+    const characteristic = state.characteristics.find((entry) => entry.name === 'Телосложение')!
+    characteristic.check = ''
+    characteristic.save = '+13'
+    state.combatEffects = [effect({ modifiers: [{ id: 'score', target: `characteristic.${characteristic.id}.score`, operation: 'SET', value: 40 }] })]
+    const calculations = calculateCombatState(state)
+    expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.check`)?.finalValue).toBe(15)
+    expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.save`)?.finalValue).toBe(13)
+    expect(characteristic.score).toBe('30')
+  })
   it('читает типографские знаки и отображает явный знак положительных бонусов', () => {
     expect(parseCombatNumber('−4')).toBe(-4)
     expect(parseCombatNumber('+13')).toBe(13)

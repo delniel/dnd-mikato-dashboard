@@ -78,8 +78,55 @@ describe('игровые представления листа', () => {
 
     navigate('Бой')
     await screen.findByRole('heading', { name: 'Боевые параметры' })
-    expect(within(screen.getByRole('button', { name: 'Расчёт: Бросок атаки' })).getByText('База: 4')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: 'Расчёт: Бонус атаки заклинанием' })).getByText('База: 4')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: 'Расчёт: Владение оружием: бонус' })).getByText('База: 4')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: 'Расчёт: Владение заклинанием: бонус' })).getByText('База: 4')).toBeInTheDocument()
+  })
+
+  it('списывает ману умения из быстрого доступа в бою', async () => {
+    const initial = createInitialCharacter()
+    initial.skills[0] = { ...initial.skills[0], manaCost: 2 }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
+    fireEvent.click(screen.getByRole('button', { name: 'Использовать (2 маны)' }))
+    expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - 2)
+  })
+
+  it('не использует неподготовленное заклинание', async () => {
+    const initial = createInitialCharacter()
+    initial.spells[0] = { ...initial.spells[0], prepared: false }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Заклинания')
+    const useButton = await screen.findByRole('button', { name: `Использовать ${initial.spells[0].name}: списать ${initial.spells[0].manaCost} маны` })
+    expect(useButton).toBeDisabled()
+    expect(screen.getAllByText('Не подготовлено').length).toBeGreaterThan(0)
+  })
+
+  it('позволяет использовать руну без обязательной подготовки', async () => {
+    const initial = createInitialCharacter()
+    initial.spells[0] = { ...initial.spells[0], prepared: false, requiresPreparation: false }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Заклинания')
+    const useButton = await screen.findByRole('button', { name: `Использовать ${initial.spells[0].name}: списать ${initial.spells[0].manaCost} маны` })
+    expect(useButton).toBeEnabled()
+    fireEvent.click(useButton)
+    expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - (initial.spells[0].manaCost ?? 0))
+  })
+
+  it('создаёт и изменяет дополнительный боевой ресурс', async () => {
+    render(<App />)
+    navigate('Бой')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить ресурс' }))
+    fireEvent.change(screen.getByLabelText('Название ресурса Новый ресурс'), { target: { value: 'Искра' } })
+    const section = screen.getByLabelText('Название ресурса Искра').closest('section') ?? screen.getByLabelText('Название ресурса Искра').parentElement?.parentElement?.parentElement
+    expect(section).toBeTruthy()
+    fireEvent.change(within(section as HTMLElement).getByLabelText('Максимум'), { target: { value: '3' } })
+    fireEvent.click(within(section as HTMLElement).getByRole('button', { name: 'Искра: текущее значение: плюс 1' }))
+    expect(useCharacterStore.getState().customResources[0]).toMatchObject({ name: 'Искра', current: 1, max: 3 })
   })
 
   it('восстанавливает ману на величину из боевых резервов', async () => {
@@ -250,6 +297,20 @@ describe('игровые представления листа', () => {
     fireEvent.change(name, { target: { value: 'Моё название' } })
     fireEvent.change(source, { target: { value: `spell:${second.id}` } })
     expect(name).toHaveValue('Моё название')
+  })
+
+  it('позволяет выбрать эффект на заклинания без общего поля Сл. спасброска', async () => {
+    const initial = createInitialCharacter()
+    initial.profile.proficiency = ''
+    initial.profile.spellSaveDc = ''
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Бой')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить эффект' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить изменение' }))
+    const select = screen.getByLabelText('Целевой параметр')
+    expect(within(select).getByRole('option', { name: 'Сложность спасброска заклинаний' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: 'Атака заклинанием' })).toBeInTheDocument()
   })
 
   it('восстанавливает сохранённые эффекты при загрузке страницы', async () => {

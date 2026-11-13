@@ -15,6 +15,7 @@ import {
   setTemporaryHp,
   undoResource,
   type CharacterState,
+  type CustomResource,
   type CurrencyKey,
   type Item,
   type NamedEntry,
@@ -36,6 +37,8 @@ type Store = CharacterState & {
   adjustLevel: (delta: number) => void
   setResource: (key: ResourceKey, current: number) => void
   setResourceMax: (key: ResourceKey, max: number) => void
+  upsertCustomResource: (resource: CustomResource) => void
+  deleteCustomResource: (id: string) => void
   adjust: (key: ResourceKey, delta: number) => void
   setTemporaryHp: (value: number) => void
   setSuperiorityDie: (dieType: string) => void
@@ -92,6 +95,12 @@ export const useCharacterStore = create<Store>((set, get) => ({
 
   setResource: (key, current) => set((state) => changeResource(state, key, current)),
   setResourceMax: (key, max) => set((state) => setResourceMaximum(state, key, max)),
+  upsertCustomResource: (resource) => set((state) => {
+    const max = Number.isFinite(resource.max) ? Math.max(0, resource.max) : 0
+    const current = Number.isFinite(resource.current) ? Math.min(max, Math.max(0, resource.current)) : 0
+    return { customResources: updateList(state.customResources, { ...resource, max, current }) }
+  }),
+  deleteCustomResource: (id) => set((state) => ({ customResources: state.customResources.filter((resource) => resource.id !== id) })),
   adjust: (key, delta) => set((state) => changeResource(state, key, state.resources[key].current + delta)),
   setTemporaryHp: (value) => set((state) => setTemporaryHp(state, value)),
   setSuperiorityDie: (dieType) => set((state) => setSuperiorityDie(state, dieType)),

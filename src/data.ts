@@ -5,9 +5,9 @@ export type Skill = PersistentSkill
 export type Item = PersistentItem
 
 export const initialCharacter: CharacterState = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   profile: { playerName: 'Дель', name: 'Урумир', classBackground: 'Возвращённый к Жизни Магией, рождённый магией', className: '', proficiency: '+3', armorClass: '23', initiative: '', spellCapacity: '9 + 4', hitDie: '1d4', superiorityDie: '1d8', speed: '30', manaRecovery: '+30', mainCharacteristic: 'Телосложение', race: 'Гомункул', raceSubtype: 'Алхимический Гомункул', background: 'Возвращённый к Жизни Магией, рождённый магией', alignment: 'Хаотично Нейтральный', size: 'Средний', powerType: 'Магия', masteryMagic: 'Магия', profession: '', age: '6 лет', height: '160 см', weight: '20', eyes: 'Голубые', hair: 'Красные', skin: 'Светлая', traits: 'Я считаю, что смерть — это биологический процесс.', ideals: 'Познание: Я хочу понять, почему я живу.', bonds: 'Узнать, кто я, что я и кто меня создал.', weaknesses: '', backstory: '', characterNotes: '', avatarId: '' },
-  resources: { hp: { current: 81, max: 81, temporary: 0 }, mana: { current: 300, max: 300 }, superiority: { current: 2, max: 2, dieType: '1d8' } }, experience: 10, level: 11, inspiration: false,
+  resources: { hp: { current: 81, max: 81, temporary: 0 }, mana: { current: 300, max: 300 }, superiority: { current: 2, max: 2, dieType: '1d8' }, patronMana: { current: 0, max: 0 }, hitDice: { current: 0, max: 0 } }, customResources: [], experience: 10, level: 11, inspiration: false,
   senses: { 'Восприятие': '15', 'Проницательность': '15', 'Анализ': '10' }, favorites: [], notes: [], combatEffects: [], settings: { levelUpBehavior: 'carry', allowNegativeMana: false, themeMode: 'dark', accentColor: 'red' }, characteristics: [], languages: [], proficiencies: [], elements: [], spells: [], skills: [], inventory: [], currencies: { PP: 0, GP: 70, SP: 0, CP: 0 }, diceHistory: [], extras: {},
 }
 
@@ -68,9 +68,9 @@ export function createUrumirCharacter(): CharacterState { return structuredClone
 export function createBlankCharacter(): CharacterState {
   const state = createUrumirCharacter()
   state.profile = Object.fromEntries(Object.keys(state.profile).map((key) => [key, '']))
-  state.resources = { hp: { current: 0, max: 0, temporary: 0 }, mana: { current: 0, max: 0 }, superiority: { current: 0, max: 0, dieType: '' } }
+  state.resources = { hp: { current: 0, max: 0, temporary: 0 }, mana: { current: 0, max: 0 }, superiority: { current: 0, max: 0, dieType: '' }, patronMana: { current: 0, max: 0 }, hitDice: { current: 1, max: 1 } }
   state.experience = 0
-  state.level = 0
+  state.level = 1
   state.inspiration = false
   state.senses = { Восприятие: '', Проницательность: '', Анализ: '' }
   state.favorites = []

@@ -2,19 +2,20 @@ import { z } from 'zod'
 import { createInitialCharacter } from './data'
 import { combatEffectSchema, migrateCombatEffects, type CombatEffect } from './combat'
 
-export const SCHEMA_VERSION = 8
-export const experienceThresholds = [20, 45, 75, 110, 150, 195, 245, 300, 360, 425, 495, 570, 650, 735, 825, 920, 1020, 1125, 1235, 1350, 1470, 1595, 1725, 1860, 2000]
+export const SCHEMA_VERSION = 9
+export const experienceThresholds = [320, 380, 450, 530, 620, 720, 830, 950, 1080, 1220, 1370, 1530, 1700, 1880, 2070, 2270, 2480, 2700, 2930, 3170]
 
-export type ResourceKey = 'hp' | 'mana' | 'superiority'
+export type ResourceKey = 'hp' | 'mana' | 'superiority' | 'patronMana' | 'hitDice'
 export type Resource = { current: number; max: number; temporary?: number; dieType?: string }
+export type CustomResource = { id: string; name: string; current: number; max: number }
 export type ThemeMode = 'dark' | 'light'
 export type AccentColor = 'red' | 'blue' | 'cyan' | 'green' | 'purple' | 'pink' | 'yellow'
 export type NamedEntry = { id: string; name: string; imageId?: string }
 export type SkillProficiencyRank = 0 | 1 | 2
 export type CharacterSkill = { id: string; name: string; bonus: string; proficiencyRank: SkillProficiencyRank }
 export type Characteristic = { id: string; name: string; score: string; check: string; save: string; skills: CharacterSkill[] }
-export type Spell = { id: string; name: string; imageId?: string; elements: string[]; characteristic: string; components: string; castingTime: string; target?: string; range: string; duration: string; manaCost: number | null; damageOrHealing: string; damage?: string; healing?: string; difficulty: string; level: string; summary: string; description: string; effects: string; restrictions: string; tags: string[]; requiresConcentration: boolean; actionType: string }
-export type Skill = { id: string; name: string; imageId?: string; difficulty: string; actionType: string; summary: string; mechanics: string; condition: string; requirement: string; status: 'active' | 'passive' | 'reaction'; tags: string[] }
+export type Spell = { id: string; name: string; imageId?: string; elements: string[]; characteristic: string; components: string; castingTime: string; target?: string; range: string; area?: string; spellType?: string; saveCheck?: string; additionalEffect?: string; attackAdjustment?: string; saveDcAdjustment?: string; runic?: boolean; runeComplexity?: string; runeAction?: string; runeTrigger?: string; duration: string; manaCost: number | null; prepared?: boolean; requiresPreparation?: boolean; damageOrHealing: string; damage?: string; healing?: string; difficulty: string; level: string; summary: string; description: string; effects: string; restrictions: string; tags: string[]; requiresConcentration: boolean; actionType: string }
+export type Skill = { id: string; name: string; imageId?: string; difficulty: string; actionType: string; summary: string; mechanics: string; condition: string; requirement: string; characteristic?: string; progression?: string; manaCost?: number | null; status: 'active' | 'passive' | 'reaction'; tags: string[] }
 export type Item = { id: string; name: string; imageId?: string; category: string; quantity: string; damage: string; damageType: string; range: string; properties: string; cost: string; description: string; equipped: boolean; note: string }
 export type CurrencyKey = 'PP' | 'GP' | 'SP' | 'CP'
 export type DiceRoll = { id: string; dice: Record<string, number>; results: Record<string, number[]>; total: number; createdAt: string }
@@ -24,6 +25,7 @@ export type CharacterState = {
   schemaVersion: number
   profile: Record<string, string>
   resources: Record<ResourceKey, Resource>
+  customResources: CustomResource[]
   experience: number
   level: number
   inspiration: boolean
@@ -32,7 +34,7 @@ export type CharacterState = {
   notes: Note[]
   combatEffects: CombatEffect[]
   settings: { levelUpBehavior: 'carry' | 'reset'; allowNegativeMana: boolean; themeMode: ThemeMode; accentColor: AccentColor }
-  recentAction?: { key: ResourceKey; previous: number; label: string }
+  recentAction?: { key: ResourceKey; previous: number; label: string; previousPatronMana?: number }
   characteristics: Characteristic[]
   languages: NamedEntry[]
   proficiencies: NamedEntry[]
@@ -50,15 +52,16 @@ const superiorityResourceSchema = resourceSchema.extend({ dieType: z.string() })
 const entrySchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional() })
 const skillBonusSchema = z.object({ id: z.string(), name: z.string(), bonus: z.string(), proficiencyRank: z.union([z.literal(0), z.literal(1), z.literal(2)]) })
 const characteristicSchema = z.object({ id: z.string(), name: z.string(), score: z.string(), check: z.string(), save: z.string(), skills: z.array(skillBonusSchema) })
-const spellSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), elements: z.array(z.string()), characteristic: z.string(), components: z.string(), castingTime: z.string(), target: z.string().optional(), range: z.string(), duration: z.string(), manaCost: z.number().nullable(), damageOrHealing: z.string(), damage: z.string().optional(), healing: z.string().optional(), difficulty: z.string(), level: z.string(), summary: z.string(), description: z.string(), effects: z.string(), restrictions: z.string(), tags: z.array(z.string()), requiresConcentration: z.boolean(), actionType: z.string() })
-const skillSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), difficulty: z.string(), actionType: z.string(), summary: z.string(), mechanics: z.string(), condition: z.string(), requirement: z.string(), status: z.enum(['active', 'passive', 'reaction']), tags: z.array(z.string()) })
+const spellSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), elements: z.array(z.string()), characteristic: z.string(), components: z.string(), castingTime: z.string(), target: z.string().optional(), range: z.string(), area: z.string().optional(), spellType: z.string().optional(), saveCheck: z.string().optional(), additionalEffect: z.string().optional(), attackAdjustment: z.string().optional(), saveDcAdjustment: z.string().optional(), runic: z.boolean().optional(), runeComplexity: z.string().optional(), runeAction: z.string().optional(), runeTrigger: z.string().optional(), duration: z.string(), manaCost: z.number().nullable(), prepared: z.boolean().optional(), requiresPreparation: z.boolean().optional(), damageOrHealing: z.string(), damage: z.string().optional(), healing: z.string().optional(), difficulty: z.string(), level: z.string(), summary: z.string(), description: z.string(), effects: z.string(), restrictions: z.string(), tags: z.array(z.string()), requiresConcentration: z.boolean(), actionType: z.string() })
+const skillSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), difficulty: z.string(), actionType: z.string(), summary: z.string(), mechanics: z.string(), condition: z.string(), requirement: z.string(), characteristic: z.string().optional(), progression: z.string().optional(), manaCost: z.number().finite().min(0).nullable().optional(), status: z.enum(['active', 'passive', 'reaction']), tags: z.array(z.string()) })
 const itemSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), category: z.string(), quantity: z.string(), damage: z.string(), damageType: z.string(), range: z.string(), properties: z.string(), cost: z.string(), description: z.string(), equipped: z.boolean(), note: z.string() })
 const noteSchema = z.object({ id: z.string(), title: z.string(), body: z.string(), tags: z.array(z.string()), imageId: z.string().optional(), createdAt: z.string(), updatedAt: z.string() })
 
 export const characterSchema = z.object({
   schemaVersion: z.number(),
   profile: z.record(z.string(), z.string()),
-  resources: z.object({ hp: resourceSchema, mana: resourceSchema, superiority: superiorityResourceSchema }),
+  resources: z.object({ hp: resourceSchema, mana: resourceSchema, superiority: superiorityResourceSchema, patronMana: resourceSchema, hitDice: resourceSchema }),
+  customResources: z.array(z.object({ id: z.string(), name: z.string(), current: z.number().finite().min(0), max: z.number().finite().min(0) })),
   experience: z.number(),
   level: z.number(),
   inspiration: z.boolean(),
@@ -67,7 +70,7 @@ export const characterSchema = z.object({
   notes: z.array(noteSchema),
   combatEffects: z.array(combatEffectSchema),
   settings: z.object({ levelUpBehavior: z.enum(['carry', 'reset']), allowNegativeMana: z.boolean(), themeMode: z.enum(['dark', 'light']), accentColor: z.enum(['red', 'blue', 'cyan', 'green', 'purple', 'pink', 'yellow']) }),
-  recentAction: z.object({ key: z.enum(['hp', 'mana', 'superiority']), previous: z.number(), label: z.string() }).optional(),
+  recentAction: z.object({ key: z.enum(['hp', 'mana', 'superiority', 'patronMana', 'hitDice']), previous: z.number(), label: z.string(), previousPatronMana: z.number().optional() }).optional(),
   characteristics: z.array(characteristicSchema),
   languages: z.array(entrySchema),
   proficiencies: z.array(entrySchema),
@@ -81,7 +84,7 @@ export const characterSchema = z.object({
 })
 
 export function thresholdForLevel(level: number): number | undefined {
-  return level >= 0 && level < 25 ? experienceThresholds[level] : undefined
+  return Number.isInteger(level) && level >= 1 ? experienceThresholds[level - 1] : undefined
 }
 
 const parseRuleNumber = (value: string | number | undefined): number | null => {
@@ -96,7 +99,8 @@ const parseRuleNumber = (value: string | number | undefined): number | null => {
 export function characteristicModifier(score: string | number | undefined): number | null {
   const parsed = parseRuleNumber(score)
   if (parsed === null) return null
-  const bounded = Math.min(30, Math.max(0, Math.trunc(parsed)))
+  // Some abilities explicitly raise a characteristic above the normal limit of 30.
+  const bounded = Math.max(0, Math.trunc(parsed))
   return Math.floor((bounded - 10) / 2)
 }
 
@@ -106,8 +110,40 @@ export function calculateSkillBonus(score: string | number | undefined, proficie
   return modifier + (parseRuleNumber(proficiency) ?? 0) * rank
 }
 
+/** A spell may list several characteristics; each is calculated independently. */
+export function spellCastingStats(characteristicNames: string, characteristics: Characteristic[], mainCharacteristic: string, proficiency: string, runic = false): Array<{ name: string; attack: number; saveDc: number; proficient: boolean }> {
+  const names = characteristicNames.split(/\s*[/,;]\s*|\s+или\s+/iu).map((name) => name.trim().toLocaleLowerCase()).filter(Boolean)
+  return characteristics.flatMap((entry) => {
+    if (!names.includes(entry.name.trim().toLocaleLowerCase())) return []
+    const modifier = characteristicModifier(entry.score)
+    if (modifier === null) return []
+    const proficient = entry.name.trim().toLocaleLowerCase() === mainCharacteristic.trim().toLocaleLowerCase()
+    const bonus = parseRuleNumber(proficiency) ?? 0
+    const attack = modifier + (!runic && proficient ? bonus : 0)
+    return [{ name: entry.name, attack, saveDc: 8 + (runic ? modifier + bonus : attack), proficient }]
+  })
+}
+
+export function runeComplexityMetrics(value: string | undefined): { complexity: number; dc: number; mana: number; impossible: boolean } | null {
+  const parsed = parseRuleNumber(value)
+  if (parsed === null || !Number.isInteger(parsed)) return null
+  const complexity = Math.max(0, parsed)
+  const dc = complexity <= 1 ? 8 : complexity <= 3 ? 10 : complexity <= 6 ? 15 : complexity <= 9 ? 20 : complexity <= 13 ? 30 : 40
+  const mana = complexity <= 3 ? 3 : complexity <= 9 ? 4 : complexity <= 13 ? 5 : 6
+  return { complexity, dc, mana, impossible: complexity >= 14 }
+}
+
 export function nextSkillProficiencyRank(rank: SkillProficiencyRank): SkillProficiencyRank {
   return rank === 0 ? 1 : rank === 1 ? 2 : 0
+}
+
+export function specializationProgress(level: number, profile: Record<string, string>): { earned: number; spent: number; remaining: number } | null {
+  const values = ['specializationMagic', 'specializationCombat', 'specializationCraft'].map((key) => (profile[key] ?? '').trim())
+  if (values.some((value) => value !== '' && !/^\d+$/.test(value))) return null
+  const spent = values.reduce((sum, value) => sum + (value ? Number(value) : 0), 0)
+  if (!Number.isSafeInteger(spent)) return null
+  const earned = Math.max(0, Math.trunc(level) - 1)
+  return { earned, spent, remaining: earned - spent }
 }
 
 export function levelUp(state: CharacterState): CharacterState {
@@ -189,8 +225,18 @@ export function restoreMana(state: CharacterState): CharacterState {
 }
 
 export function deductMana(state: CharacterState, cost: number): CharacterState | null {
-  if (!state.settings.allowNegativeMana && state.resources.mana.current < cost) return null
-  return changeResource(state, 'mana', state.resources.mana.current - cost, `Заклинание: −${cost} маны`)
+  if (!Number.isFinite(cost) || cost < 0) return null
+  const mana = state.resources.mana
+  const reserve = state.resources.patronMana
+  const ordinarySpent = Math.min(Math.max(0, mana.current), cost)
+  const reserveSpent = Math.min(reserve.current, cost - ordinarySpent)
+  const remaining = cost - ordinarySpent - reserveSpent
+  if (!state.settings.allowNegativeMana && remaining > 0) return null
+  return {
+    ...state,
+    resources: { ...state.resources, mana: { ...mana, current: mana.current - ordinarySpent - remaining }, patronMana: { ...reserve, current: reserve.current - reserveSpent } },
+    recentAction: { key: 'mana', previous: mana.current, previousPatronMana: reserve.current, label: `Расход маны: −${cost}` },
+  }
 }
 
 export function undoResource(state: CharacterState): CharacterState {
@@ -200,6 +246,7 @@ export function undoResource(state: CharacterState): CharacterState {
     resources: {
       ...state.resources,
       [state.recentAction.key]: { ...state.resources[state.recentAction.key], current: state.recentAction.previous },
+      ...(state.recentAction.previousPatronMana !== undefined ? { patronMana: { ...state.resources.patronMana, current: state.recentAction.previousPatronMana } } : {}),
     },
     recentAction: undefined,
   }
@@ -338,7 +385,7 @@ export function migrateCharacter(input: unknown): CharacterState {
   const sourceResources = isRecord(input.resources) ? input.resources : {}
   const resource = (key: ResourceKey): Resource => {
     const raw = sourceResources[key]
-    const fallback = defaults.resources[key]
+    const fallback: Resource = key === 'hitDice' ? { current: 0, max: 0 } : defaults.resources[key]
     if (!isRecord(raw)) return { ...fallback }
     const rawMax = typeof raw.max === 'number' ? Math.max(0, raw.max) : fallback.max
     const rawCurrent = typeof raw.current === 'number' ? raw.current : fallback.current
@@ -355,7 +402,7 @@ export function migrateCharacter(input: unknown): CharacterState {
       : common
   }
 
-  const known = new Set(['schemaVersion', 'profile', 'resources', 'experience', 'level', 'inspiration', 'senses', 'favorites', 'notes', 'combatEffects', 'settings', 'recentAction', 'characteristics', 'languages', 'proficiencies', 'elements', 'spells', 'skills', 'inventory', 'currencies', 'diceHistory', 'extras'])
+  const known = new Set(['schemaVersion', 'profile', 'resources', 'customResources', 'experience', 'level', 'inspiration', 'senses', 'favorites', 'notes', 'combatEffects', 'settings', 'recentAction', 'characteristics', 'languages', 'proficiencies', 'elements', 'spells', 'skills', 'inventory', 'currencies', 'diceHistory', 'extras'])
   const legacyElectrum = isRecord(input.currencies) && typeof input.currencies.EP === 'number' ? input.currencies.EP : undefined
   const extras = {
     ...defaults.extras,
@@ -368,7 +415,12 @@ export function migrateCharacter(input: unknown): CharacterState {
     ...defaults,
     schemaVersion: SCHEMA_VERSION,
     profile,
-    resources: { hp: resource('hp'), mana: resource('mana'), superiority: resource('superiority') },
+    resources: { hp: resource('hp'), mana: resource('mana'), superiority: resource('superiority'), patronMana: resource('patronMana'), hitDice: resource('hitDice') },
+    customResources: Array.isArray(input.customResources) ? input.customResources.filter(isRecord).map((entry) => {
+      const max = typeof entry.max === 'number' && Number.isFinite(entry.max) ? Math.max(0, entry.max) : 0
+      const current = typeof entry.current === 'number' && Number.isFinite(entry.current) ? Math.min(max, Math.max(0, entry.current)) : 0
+      return { id: asString(entry.id, newId()), name: asString(entry.name), current, max }
+    }) : [],
     experience: typeof input.experience === 'number' ? input.experience : defaults.experience,
     level: Math.min(25, Math.max(0, typeof input.level === 'number' ? Math.trunc(input.level) : defaults.level)),
     inspiration: input.inspiration === true,

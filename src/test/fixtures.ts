@@ -61,6 +61,8 @@ export function createTestCharacter(): CharacterState {
     hp: { current: 81, max: 81, temporary: 0 },
     mana: { current: 300, max: 300 },
     superiority: { current: 2, max: 2, dieType: '1d8' },
+    patronMana: { current: 0, max: 0 },
+    hitDice: { current: 0, max: 0 },
   }
   state.experience = 10
   state.level = 11

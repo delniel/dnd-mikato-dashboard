@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { characteristicModifier, type CharacterState } from './domain'
+import { characteristicModifier, spellCastingStats, type CharacterState } from './domain'
 
 export const combatCategories = ['positive', 'negative', 'special'] as const
 export const combatOperations = ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'SET'] as const
@@ -140,11 +140,11 @@ export function parseCombatNumber(value: string | undefined): number | null {
 const profileTargets: Array<{ key: string; label: string; unit?: string; nonNegative?: boolean; baseKey?: string }> = [
   { key: 'armorClass', label: 'Класс доспеха' },
   { key: 'speed', label: 'Скорость', unit: ' фут.', nonNegative: true },
-  { key: 'attackBonus', label: 'Бросок атаки', baseKey: 'proficiency' },
+  { key: 'attackBonus', label: 'Владение оружием: бонус', baseKey: 'proficiency' },
   { key: 'damageBonus', label: 'Бонус урона' },
   { key: 'meleeRange', label: 'Дальность ближней атаки', unit: ' фут.', nonNegative: true },
   { key: 'rangedRange', label: 'Дальность дальней атаки', unit: ' фут.', nonNegative: true },
-  { key: 'spellAttackBonus', label: 'Бонус атаки заклинанием', baseKey: 'proficiency' },
+  { key: 'spellAttackBonus', label: 'Владение заклинанием: бонус', baseKey: 'proficiency' },
   { key: 'spellSaveDc', label: 'Сложность спасброска заклинаний' },
 ]
 
@@ -212,8 +212,39 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
 }
 
 export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects'>): CombatCalculation[] {
-  return buildCombatTargets(state as Pick<CharacterState, 'profile' | 'characteristics'>)
-    .map((target) => calculateCombatTarget(target, state.combatEffects))
+  const targets = buildCombatTargets(state)
+  return targets.map((target) => {
+    const characteristic = state.characteristics.find((entry) =>
+      (target.id === `characteristic.${entry.id}.check` && !entry.check.trim()) ||
+      (target.id === `characteristic.${entry.id}.save` && !entry.save.trim()))
+    if (!characteristic) return calculateCombatTarget(target, state.combatEffects)
+    const score = targets.find((entry) => entry.id === `characteristic.${characteristic.id}.score`)
+    if (!score) return calculateCombatTarget(target, state.combatEffects)
+    const effectiveScore = calculateCombatTarget(score, state.combatEffects).finalValue
+    const effectiveModifier = characteristicModifier(effectiveScore)
+    if (effectiveModifier === null || effectiveModifier === target.baseValue) return calculateCombatTarget(target, state.combatEffects)
+    const result = calculateCombatTarget({ ...target, baseValue: effectiveModifier }, state.combatEffects)
+    return {
+      ...result,
+      target,
+      baseValue: target.baseValue,
+      effectDelta: result.finalValue - target.baseValue,
+      steps: [{ effectId: `derived.${characteristic.id}`, effectName: 'Модификатор изменённой характеристики', operation: 'SET' as const, value: effectiveModifier, before: target.baseValue, after: effectiveModifier, applied: true }, ...result.steps],
+    }
+  })
+}
+
+export function calculateSpellCombatStats(characteristicNames: string, state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects'>, runic = false, adjustments: { attack?: string; saveDc?: string } = {}) {
+  const scoreTargets = buildCombatTargets(state).filter((target) => target.id.startsWith('characteristic.') && target.id.endsWith('.score'))
+  const effectiveCharacteristics = state.characteristics.map((characteristic) => {
+    const target = scoreTargets.find((entry) => entry.id === `characteristic.${characteristic.id}.score`)
+    return target ? { ...characteristic, score: String(calculateCombatTarget(target, state.combatEffects).finalValue) } : characteristic
+  })
+  return spellCastingStats(characteristicNames || (runic ? 'Интеллект' : ''), effectiveCharacteristics, state.profile.mainCharacteristic || '', state.profile.proficiency || '', runic).map((stat) => ({
+    ...stat,
+    attack: runic ? stat.attack + (parseCombatNumber(adjustments.attack) ?? 0) : calculateCombatTarget({ id: 'profile.spellAttackBonus', label: 'Атака заклинанием', group: 'combat', baseValue: stat.attack + (parseCombatNumber(adjustments.attack) ?? 0) }, state.combatEffects).finalValue,
+    saveDc: calculateCombatTarget({ id: 'profile.spellSaveDc', label: 'Сложность спасброска', group: 'combat', baseValue: stat.saveDc + (parseCombatNumber(adjustments.saveDc) ?? 0) }, state.combatEffects).finalValue,
+  }))
 }
 
 export function formatCombatNumber(value: number): string {
