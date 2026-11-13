@@ -92,6 +92,21 @@ describe('игровые представления листа', () => {
     expect(screen.getByText('Предыстория').parentElement).toHaveTextContent('Чужеземец')
   })
 
+  it('показывает индивидуальные скорости в персонаже и бою', async () => {
+    const initial = createInitialCharacter()
+    initial.profile.flySpeed = '30'
+    initial.profile.swimSpeed = '40'
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Персонаж')
+    expect((await screen.findByText('Скорость полёта')).parentElement).toHaveTextContent('30')
+    expect(screen.getByText('Скорость плавания').parentElement).toHaveTextContent('40')
+    navigate('Бой')
+    expect(await screen.findByRole('button', { name: 'Расчёт: Скорость полёта' })).toHaveTextContent('30')
+    expect(screen.getByRole('button', { name: 'Расчёт: Скорость плавания' })).toHaveTextContent('40')
+    expect(screen.queryByRole('button', { name: 'Расчёт: Скорость лазания' })).not.toBeInTheDocument()
+  })
+
   it('подставляет бонус владения в базу бросков атаки', async () => {
     const initial = createInitialCharacter()
     initial.profile.proficiency = '+4'

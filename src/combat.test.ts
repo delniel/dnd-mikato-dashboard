@@ -20,6 +20,19 @@ const effect = (patch: Partial<CombatEffect> = {}): CombatEffect => ({
 })
 
 describe('чистый расчёт боевых параметров', () => {
+  it('учитывает отдельные скорости и эффекты без изменения базовых значений', () => {
+    const state = createInitialCharacter()
+    state.profile.flySpeed = '30'
+    state.profile.swimSpeed = '40'
+    state.profile.climbSpeed = '20'
+    state.combatEffects = [effect({ modifiers: [{ id: 'flight', target: 'profile.flySpeed', operation: 'ADD', value: 10 }] })]
+    const values = calculateCombatState(state)
+    expect(values.find((entry) => entry.target.id === 'profile.flySpeed')?.finalValue).toBe(40)
+    expect(values.find((entry) => entry.target.id === 'profile.swimSpeed')?.finalValue).toBe(40)
+    expect(values.find((entry) => entry.target.id === 'profile.climbSpeed')?.finalValue).toBe(20)
+    expect(state.profile.flySpeed).toBe('30')
+    expect(state.profile.speed).toBe('30')
+  })
   it('учитывает изменение характеристики до 40 и отдельный эффект на сложность заклинания', () => {
     const state = createInitialCharacter()
     const characteristic = state.characteristics.find((entry) => entry.name === 'Телосложение')!

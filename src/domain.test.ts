@@ -358,6 +358,15 @@ describe('кубики и миграция', () => {
     expect(restored.combatEffects).toEqual([combatEffect])
   })
 
+  it('сохраняет отдельные скорости при экспорте и импорте', () => {
+    const state = base()
+    state.profile.flySpeed = '30'
+    state.profile.swimSpeed = '40'
+    state.profile.climbSpeed = '20'
+    const restored = restoreCharacter(serializeCharacter(state))
+    expect(restored.profile).toMatchObject({ speed: state.profile.speed, flySpeed: '30', swimSpeed: '40', climbSpeed: '20' })
+  })
+
   it('конвертирует только соседние номиналы монет по курсу 1 к 10', () => {
     const state = { ...base(), currencies: { PP: 1, GP: 10, SP: 0, CP: 0 } }
     const down = convertCurrency(state, 'PP', 'GP')

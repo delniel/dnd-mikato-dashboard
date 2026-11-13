@@ -140,6 +140,9 @@ export function parseCombatNumber(value: string | undefined): number | null {
 const profileTargets: Array<{ key: string; label: string; unit?: string; nonNegative?: boolean; baseKey?: string }> = [
   { key: 'armorClass', label: 'Класс доспеха' },
   { key: 'speed', label: 'Скорость', unit: ' фут.', nonNegative: true },
+  { key: 'flySpeed', label: 'Скорость полёта', unit: ' фут.', nonNegative: true },
+  { key: 'swimSpeed', label: 'Скорость плавания', unit: ' фут.', nonNegative: true },
+  { key: 'climbSpeed', label: 'Скорость лазания', unit: ' фут.', nonNegative: true },
   { key: 'attackBonus', label: 'Владение оружием: бонус', baseKey: 'proficiency' },
   { key: 'damageBonus', label: 'Бонус урона' },
   { key: 'meleeRange', label: 'Дальность ближней атаки', unit: ' фут.', nonNegative: true },
