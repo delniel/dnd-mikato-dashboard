@@ -100,7 +100,10 @@ describe('автоматические модификаторы навыков',
     expect(spellCastingStats('Неизвестно', characteristics, 'Интеллект', '+3')).toEqual([])
   })
   it('рассчитывает модификатор характеристики по таблице от 0 до 30', () => {
-    expect([[0, -5], [1, -5], [2, -4], [9, -1], [10, 0], [11, 0], [20, 5], [29, 9], [30, 10]].map(([score]) => characteristicModifier(score))).toEqual([-5, -5, -4, -1, 0, 0, 5, 9, 10])
+    expect(Array.from({ length: 31 }, (_, score) => characteristicModifier(score))).toEqual([
+      -5, -5, -4, -4, -3, -3, -2, -2, -1, -1, 0, 0, 1, 1, 2, 2,
+      3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10,
+    ])
     expect(characteristicModifier(40)).toBe(15)
   })
 
