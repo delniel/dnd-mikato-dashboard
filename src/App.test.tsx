@@ -147,6 +147,24 @@ describe('игровые представления листа', () => {
     expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - 2)
   })
 
+  it('отслеживает готовую руну и активирует её без повторного расхода маны', async () => {
+    const initial = createInitialCharacter()
+    initial.spells[0] = { ...initial.spells[0], runic: true, manaCost: 3 }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Заклинания: быстрый доступ' })
+    fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.spells[0].name) }))
+    expect(screen.getByRole('heading', { name: 'Готовых рун: 0' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Списать на создание (3 маны)' }))
+    expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - 3)
+    fireEvent.click(screen.getByRole('button', { name: 'Отметить созданную руну' }))
+    expect(screen.getByRole('heading', { name: 'Готовых рун: 1' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Активировать готовую руну' }))
+    expect(screen.getByRole('heading', { name: 'Готовых рун: 0' })).toBeInTheDocument()
+    expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - 3)
+  })
+
   it('списывает превосходство умения из быстрого доступа и не уходит в минус', async () => {
     const initial = createInitialCharacter()
     initial.skills[0] = { ...initial.skills[0], superiorityCost: 1 }
