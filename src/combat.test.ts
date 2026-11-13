@@ -76,6 +76,17 @@ describe('чистый расчёт боевых параметров', () => {
     expect(bases).toEqual([4, 4])
   })
 
+  it('использует бонус владения по уровню для обычного заклинания, но не меняет расчёт руны', () => {
+    const state = createInitialCharacter()
+    state.level = 4
+    state.profile.proficiency = ''
+    state.profile.mainCharacteristic = 'Интеллект'
+    state.characteristics.find((entry) => entry.name === 'Интеллект')!.score = '18'
+
+    expect(calculateSpellCombatStats('Интеллект', state)[0]).toMatchObject({ attack: 6, saveDc: 14, proficient: true })
+    expect(calculateSpellCombatStats('Интеллект', state, true)[0]).toMatchObject({ attack: 4, saveDc: 12, proficient: true })
+  })
+
   it('добавляет +4 к КД 17, не изменяя базовое значение', () => {
     const result = calculateCombatTarget(armorClass, [effect()])
     expect(result.finalValue).toBe(21)

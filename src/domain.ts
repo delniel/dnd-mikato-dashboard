@@ -98,6 +98,19 @@ const parseRuleNumber = (value: string | number | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+const proficiencyMilestones = [1, 4, 7, 10, 13, 18]
+
+export function proficiencyBonusForLevel(level: number): number | null {
+  if (!Number.isInteger(level) || level < 1 || level > 20) return null
+  return proficiencyMilestones.filter((milestone) => level >= milestone).length
+}
+
+/** Explicit saved values remain overrides; blank old/new sheets use the edition's level table. */
+export function effectiveProficiency(level: number, savedValue: string | undefined): number | null {
+  const value = savedValue?.trim() ?? ''
+  return value ? parseRuleNumber(value) : proficiencyBonusForLevel(level)
+}
+
 export function characteristicModifier(score: string | number | undefined): number | null {
   const parsed = parseRuleNumber(score)
   if (parsed === null) return null
@@ -112,7 +125,7 @@ export function calculateSkillBonus(score: string | number | undefined, proficie
   return modifier + (parseRuleNumber(proficiency) ?? 0) * rank
 }
 
-export function passiveSenseValue(name: string, characteristics: Characteristic[], proficiency: string): number | null {
+export function passiveSenseValue(name: string, characteristics: Characteristic[], proficiency: string | number): number | null {
   const attribute = name === 'Анализ' ? 'Интеллект' : name === 'Восприятие' || name === 'Проницательность' ? 'Мудрость' : ''
   const characteristic = characteristics.find((entry) => entry.name === attribute)
   const skill = characteristic?.skills.find((entry) => entry.name === name)

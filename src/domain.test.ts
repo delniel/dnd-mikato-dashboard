@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { adjustPreparedRunes, adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
+import { adjustPreparedRunes, adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, effectiveProficiency, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, proficiencyBonusForLevel, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
@@ -86,6 +86,12 @@ describe('автоматические модификаторы навыков',
     expect(specializationProgress(8, profile)).toEqual({ earned: 7, spent: 5, remaining: 2 })
     expect(specializationProgress(1, { specializationMagic: 'вручную' })).toBeNull()
     expect(profile.specializationMagic).toBe('3')
+  })
+  it('рассчитывает бонус владения по подтверждённым уровням, сохраняя ручное значение', () => {
+    expect([1, 3, 4, 7, 10, 13, 18, 20].map(proficiencyBonusForLevel)).toEqual([1, 1, 2, 3, 4, 5, 6, 6])
+    expect(proficiencyBonusForLevel(21)).toBeNull()
+    expect(effectiveProficiency(11, '')).toBe(4)
+    expect(effectiveProficiency(11, '+3')).toBe(3)
   })
   it('рассчитывает сложность рун и рунный спасбросок по отдельной формуле', () => {
     expect([0, 2, 4, 7, 10, 14].map((n) => runeComplexityMetrics(String(n))?.dc)).toEqual([8, 10, 15, 20, 30, 40])

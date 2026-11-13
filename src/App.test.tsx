@@ -67,6 +67,20 @@ describe('игровые представления листа', () => {
     expect(screen.getByText('Пассивная Проницательность').parentElement).toHaveTextContent('99')
   })
 
+  it('показывает бонус владения по уровню в обзоре и навыке, если ручное значение пусто', async () => {
+    const initial = createInitialCharacter()
+    initial.level = 4
+    initial.profile.proficiency = ''
+    const perception = initial.characteristics.find((entry) => entry.name === 'Мудрость')!.skills.find((entry) => entry.name === 'Восприятие')!
+    perception.proficiencyRank = 1
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+
+    expect((await screen.findByText('Бонус владения')).parentElement).toHaveTextContent('+2')
+    navigate('Характеристики')
+    expect(await screen.findByRole('button', { name: /Восприятие: \+7/ })).toBeInTheDocument()
+  })
+
   it('показывает инициативу в боевых параметрах и отдельные заметки персонажа', async () => {
     const initial = createInitialCharacter()
     initial.profile.initiative = '+2'

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { characteristicModifier, spellCastingStats, type CharacterState } from './domain'
+import { characteristicModifier, effectiveProficiency, spellCastingStats, type CharacterState } from './domain'
 
 export const combatCategories = ['positive', 'negative', 'special'] as const
 export const combatOperations = ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'SET'] as const
@@ -151,10 +151,12 @@ const profileTargets: Array<{ key: string; label: string; unit?: string; nonNega
   { key: 'spellSaveDc', label: 'Сложность спасброска заклинаний' },
 ]
 
-export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'characteristics'>): CombatTarget[] {
+export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'characteristics' | 'level'>): CombatTarget[] {
   const targets: CombatTarget[] = []
   for (const definition of profileTargets) {
-    const baseValue = parseCombatNumber(state.profile[definition.baseKey ?? definition.key])
+    const baseValue = definition.baseKey === 'proficiency'
+      ? effectiveProficiency(state.level, state.profile.proficiency)
+      : parseCombatNumber(state.profile[definition.key])
     if (baseValue !== null) targets.push({ id: `profile.${definition.key}`, label: definition.label, group: 'combat', baseValue, unit: definition.unit, nonNegative: definition.nonNegative })
   }
   for (const characteristic of state.characteristics) {
@@ -214,7 +216,7 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
   }
 }
 
-export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects'>): CombatCalculation[] {
+export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects' | 'level'>): CombatCalculation[] {
   const targets = buildCombatTargets(state)
   return targets.map((target) => {
     const characteristic = state.characteristics.find((entry) =>
@@ -237,13 +239,16 @@ export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'ch
   })
 }
 
-export function calculateSpellCombatStats(characteristicNames: string, state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects'>, runic = false, adjustments: { attack?: string; saveDc?: string } = {}) {
+export function calculateSpellCombatStats(characteristicNames: string, state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects' | 'level'>, runic = false, adjustments: { attack?: string; saveDc?: string } = {}) {
   const scoreTargets = buildCombatTargets(state).filter((target) => target.id.startsWith('characteristic.') && target.id.endsWith('.score'))
   const effectiveCharacteristics = state.characteristics.map((characteristic) => {
     const target = scoreTargets.find((entry) => entry.id === `characteristic.${characteristic.id}.score`)
     return target ? { ...characteristic, score: String(calculateCombatTarget(target, state.combatEffects).finalValue) } : characteristic
   })
-  return spellCastingStats(characteristicNames || (runic ? 'Интеллект' : ''), effectiveCharacteristics, state.profile.mainCharacteristic || '', state.profile.proficiency || '', runic).map((stat) => ({
+  const proficiency = runic
+    ? state.profile.proficiency || ''
+    : String(effectiveProficiency(state.level, state.profile.proficiency) ?? '')
+  return spellCastingStats(characteristicNames || (runic ? 'Интеллект' : ''), effectiveCharacteristics, state.profile.mainCharacteristic || '', proficiency, runic).map((stat) => ({
     ...stat,
     attack: runic ? stat.attack + (parseCombatNumber(adjustments.attack) ?? 0) : calculateCombatTarget({ id: 'profile.spellAttackBonus', label: 'Атака заклинанием', group: 'combat', baseValue: stat.attack + (parseCombatNumber(adjustments.attack) ?? 0) }, state.combatEffects).finalValue,
     saveDc: calculateCombatTarget({ id: 'profile.spellSaveDc', label: 'Сложность спасброска', group: 'combat', baseValue: stat.saveDc + (parseCombatNumber(adjustments.saveDc) ?? 0) }, state.combatEffects).finalValue,
