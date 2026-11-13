@@ -5,6 +5,7 @@ import {
   changeResource,
   convertCurrency,
   deductMana,
+  deductSuperiority,
   levelUp,
   restoreMana,
   restoreCharacter,
@@ -43,6 +44,7 @@ type Store = CharacterState & {
   setTemporaryHp: (value: number) => void
   setSuperiorityDie: (dieType: string) => void
   cast: (cost: number) => boolean
+  spendSuperiority: (cost: number) => boolean
   recoverMana: () => boolean
   undo: () => void
   levelUp: () => void
@@ -106,6 +108,12 @@ export const useCharacterStore = create<Store>((set, get) => ({
   setSuperiorityDie: (dieType) => set((state) => setSuperiorityDie(state, dieType)),
   cast: (cost) => {
     const next = deductMana(get(), cost)
+    if (!next) return false
+    set(next)
+    return true
+  },
+  spendSuperiority: (cost) => {
+    const next = deductSuperiority(get(), cost)
     if (!next) return false
     set(next)
     return true

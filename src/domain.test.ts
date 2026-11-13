@@ -1,12 +1,31 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
+import { calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
 
 describe('автоматические модификаторы навыков', () => {
+  it('списывает кости превосходства без переплаты и позволяет отмену', () => {
+    const state = base()
+    state.resources.superiority = { current: 2, max: 2, dieType: '1d8' }
+    const spent = deductSuperiority(state, 1)!
+    expect(spent.resources.superiority.current).toBe(1)
+    expect(undoResource(spent).resources.superiority.current).toBe(2)
+    expect(deductSuperiority(state, 3)).toBeNull()
+    expect(deductSuperiority(state, -1)).toBeNull()
+    expect(deductSuperiority(state, 0.5)).toBeNull()
+    expect(deductSuperiority(state, Number.NaN)).toBeNull()
+  })
+
+  it('сохраняет стоимость превосходства умения в экспорте и не меняет старые умения', () => {
+    const state = base()
+    state.skills[0] = { ...state.skills[0], superiorityCost: 1 }
+    const restored = restoreCharacter(serializeCharacter(state))
+    expect(restored.skills[0].superiorityCost).toBe(1)
+    expect(restored.skills[1].superiorityCost).toBeUndefined()
+  })
   it('сохраняет ручные проверку и спасбросок, даже когда они совпали с модификатором', () => {
     const state = base()
     const dexterity = state.characteristics.find((entry) => entry.name === 'Ловкость')!

@@ -133,6 +133,33 @@ describe('игровые представления листа', () => {
     expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - 2)
   })
 
+  it('списывает превосходство умения из быстрого доступа и не уходит в минус', async () => {
+    const initial = createInitialCharacter()
+    initial.skills[0] = { ...initial.skills[0], superiorityCost: 1 }
+    initial.resources.superiority = { current: 1, max: 2, dieType: '1d8' }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
+    const button = screen.getByRole('button', { name: 'Списать превосходство (1)' })
+    fireEvent.click(button)
+    expect(useCharacterStore.getState().resources.superiority.current).toBe(0)
+    fireEvent.click(button)
+    expect(screen.getByText('Недостаточно превосходства: 0.')).toBeInTheDocument()
+    expect(useCharacterStore.getState().resources.superiority.current).toBe(0)
+  })
+
+  it('сохраняет вручную заданную стоимость превосходства навыка', async () => {
+    render(<App />)
+    navigate('Навыки +')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить навык' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Боевой приём' } })
+    fireEvent.change(screen.getByLabelText('Стоимость превосходства (необязательно)'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
+    expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Боевой приём')?.superiorityCost).toBe(2)
+  })
+
   it('не использует неподготовленное заклинание', async () => {
     const initial = createInitialCharacter()
     initial.spells[0] = { ...initial.spells[0], prepared: false }
