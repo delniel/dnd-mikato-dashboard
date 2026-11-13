@@ -688,7 +688,7 @@ function EffectSection({ category, effects, onEdit }: { category: CombatCategory
 function EffectCard({ effect, onEdit }: { effect: CombatEffect; onEdit: () => void }) {
   const state = useCharacterStore()
   const targetLabels = new Map(calculateCombatState(state).map((calculation) => [calculation.target.id, calculation.target.label]))
-  if (!targetLabels.has('profile.spellAttackBonus')) targetLabels.set('profile.spellAttackBonus', 'Атака заклинанием')
+  targetLabels.set('profile.spellAttackBonus', 'Атака заклинанием')
   if (!targetLabels.has('profile.spellSaveDc')) targetLabels.set('profile.spellSaveDc', 'Сложность спасброска заклинаний')
   return <Card className={`effect-card ${effect.category} ${effect.active ? '' : 'inactive'}`}>
     <div className="effect-card-heading"><div><span className="effect-category">{combatCategoryLabels[effect.category]}</span><h3>{effect.name}</h3></div><button className="effect-toggle" type="button" aria-pressed={effect.active} onClick={() => state.toggleCombatEffect(effect.id)}>{effect.active ? 'Активен' : 'Выключен'}</button></div>
@@ -705,7 +705,7 @@ function CombatEffectEditor({ effect, calculations, onClose }: { effect: CombatE
   const state = useCharacterStore()
   const [draft, setDraft] = useState<CombatEffect>(effect)
   const [error, setError] = useState('')
-  const targets = calculations.map((calculation) => ({ id: calculation.target.id, label: calculation.target.label }))
+  const targets = calculations.map((calculation) => ({ id: calculation.target.id, label: calculation.target.id === 'profile.spellAttackBonus' ? 'Атака заклинанием' : calculation.target.label }))
   if (!targets.some((target) => target.id === 'profile.spellAttackBonus')) targets.push({ id: 'profile.spellAttackBonus', label: 'Атака заклинанием' })
   if (!targets.some((target) => target.id === 'profile.spellSaveDc')) targets.push({ id: 'profile.spellSaveDc', label: 'Сложность спасброска заклинаний' })
   const sourceOptions = [
