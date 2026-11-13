@@ -26,6 +26,11 @@ describe('резервная копия с изображениями', () => {
   it('возвращает изображение на прежний imageId после ZIP-экспорта и импорта', async () => {
     const state = createInitialCharacter()
     state.profile.avatarId = 'avatar-image'
+    state.resources.patronMana = { current: 4, max: 15 }
+    state.resources.hitDice = { current: 5, max: 11 }
+    state.customResources = [{ id: 'spark', name: 'Искра', current: 2, max: 3 }]
+    state.spells[0] = { ...state.spells[0], runic: true, runeComplexity: '7', runeTrigger: 'При касании' }
+    state.skills[0] = { ...state.skills[0], manaCost: 2, progression: '5 уровень: усиление' }
     vi.mocked(loadImages).mockResolvedValue([{ id: 'avatar-image', blob: new Blob(['portrait'], { type: 'image/webp' }), updatedAt: 1 }])
 
     const exported = await createCharacterBackup(state)
@@ -33,6 +38,11 @@ describe('резервная копия с изображениями', () => {
     const restored = await restoreCharacterBackup(exported.blob)
 
     expect(restored.character.profile.avatarId).toBe('avatar-image')
+    expect(restored.character.resources.patronMana).toEqual({ current: 4, max: 15 })
+    expect(restored.character.resources.hitDice).toEqual({ current: 5, max: 11 })
+    expect(restored.character.customResources).toEqual([{ id: 'spark', name: 'Искра', current: 2, max: 3 }])
+    expect(restored.character.spells[0]).toMatchObject({ runic: true, runeComplexity: '7', runeTrigger: 'При касании' })
+    expect(restored.character.skills[0]).toMatchObject({ manaCost: 2, progression: '5 уровень: усиление' })
     expect(restored.imageCount).toBe(1)
     expect(saveImages).toHaveBeenCalledWith([expect.objectContaining({ id: 'avatar-image', blob: expect.any(Blob) })])
   })

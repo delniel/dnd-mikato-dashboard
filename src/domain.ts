@@ -366,12 +366,12 @@ const migrateCharacteristics = (value: unknown, fallback: Characteristic[], prof
     const saveTotal = sourceSchemaVersion === 7 && automaticCheck !== null && parsedSave !== null
       ? automaticCheck + parsedSave
       : parsedSave
-    const save = automaticCheck !== null && saveTotal === automaticCheck ? '' : saveTotal === null ? rawSave : String(saveTotal)
+    const save = sourceSchemaVersion >= 8 ? rawSave : automaticCheck !== null && saveTotal === automaticCheck ? '' : saveTotal === null ? rawSave : String(saveTotal)
     return {
       id,
       name: asString(rawCharacteristic.name, defaultCharacteristic?.name ?? ''),
       score,
-      check: automaticCheck !== null && parseRuleNumber(rawCheck) === automaticCheck ? '' : rawCheck,
+      check: sourceSchemaVersion < 8 && automaticCheck !== null && parseRuleNumber(rawCheck) === automaticCheck ? '' : rawCheck,
       save,
       skills,
     }

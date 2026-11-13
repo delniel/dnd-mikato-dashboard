@@ -7,6 +7,19 @@ import { useCharacterStore } from './store'
 const base = () => createInitialCharacter()
 
 describe('автоматические модификаторы навыков', () => {
+  it('сохраняет ручные проверку и спасбросок, даже когда они совпали с модификатором', () => {
+    const state = base()
+    const dexterity = state.characteristics.find((entry) => entry.name === 'Ловкость')!
+    dexterity.check = '+2'
+    dexterity.save = '+2'
+    const restored = restoreCharacter(serializeCharacter(state))
+    const saved = restored.characteristics.find((entry) => entry.id === dexterity.id)!
+    expect(saved.check).toBe('+2')
+    expect(saved.save).toBe('+2')
+    saved.score = '20'
+    expect(saved.check).toBe('+2')
+    expect(saved.save).toBe('+2')
+  })
   it('рассчитывает пассивное чувство по характеристике и владению, не добавляя пометку бонуса', () => {
     const wisdom = [{ id: 'wis', name: 'Мудрость', score: '20', check: '', save: '', skills: [{ id: 'p', name: 'Восприятие', proficiencyRank: 1 as const, bonus: '+7' }] }]
     expect(passiveSenseValue('Восприятие', wisdom, '+3')).toBe(18)
