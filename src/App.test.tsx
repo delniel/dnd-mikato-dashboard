@@ -92,6 +92,20 @@ describe('игровые представления листа', () => {
     expect(screen.getByText('Предыстория').parentElement).toHaveTextContent('Чужеземец')
   })
 
+  it('сохраняет особые чувства и защиты и показывает их в бою', async () => {
+    render(<App />)
+    navigate('Персонаж')
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать' }))
+    fireEvent.change(screen.getByLabelText('Особые чувства'), { target: { value: 'Тёмное зрение 60 футов' } })
+    fireEvent.change(screen.getByLabelText('Сопротивления'), { target: { value: 'Огонь' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить и закрыть' }))
+    expect(useCharacterStore.getState().profile.specialSenses).toBe('Тёмное зрение 60 футов')
+    navigate('Бой')
+    expect(await screen.findByText('Тёмное зрение 60 футов')).toBeInTheDocument()
+    expect(screen.getByText('Огонь')).toBeInTheDocument()
+    expect(screen.queryByText('Иммунитеты')).not.toBeInTheDocument()
+  })
+
   it('показывает индивидуальные скорости в персонаже и бою', async () => {
     const initial = createInitialCharacter()
     initial.profile.flySpeed = '30'

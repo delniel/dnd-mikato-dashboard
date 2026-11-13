@@ -7,6 +7,15 @@ import { useCharacterStore } from './store'
 const base = () => createInitialCharacter()
 
 describe('автоматические модификаторы навыков', () => {
+  it('сохраняет особые чувства и защиты при экспорте и импорте', () => {
+    const state = base()
+    state.profile.specialSenses = 'Тёмное зрение 60 футов'
+    state.profile.resistances = 'Огонь'
+    state.profile.immunities = 'Яд'
+    state.profile.vulnerabilities = 'Холод'
+    const restored = restoreCharacter(serializeCharacter(state))
+    expect(restored.profile).toMatchObject({ specialSenses: 'Тёмное зрение 60 футов', resistances: 'Огонь', immunities: 'Яд', vulnerabilities: 'Холод' })
+  })
   it('учитывает и сохраняет применения умения, соблюдая границы и старые данные', () => {
     const state = base()
     const id = state.skills[0].id
