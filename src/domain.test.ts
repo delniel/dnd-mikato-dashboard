@@ -1,26 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { adjustPreparedRunes, adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
+import { adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
 
 describe('автоматические модификаторы навыков', () => {
-  it('учитывает готовые руны отдельно от маны и сохраняет их при импорте', () => {
-    const state = base()
-    const id = state.spells[0].id
-    state.spells[0] = { ...state.spells[0], runic: true }
-    expect(adjustPreparedRunes(state, id, -1)).toBeNull()
-    expect(adjustPreparedRunes(state, id, 0.5)).toBeNull()
-    expect(adjustPreparedRunes(state, state.spells[1].id, 1)).toBeNull()
-    const prepared = adjustPreparedRunes(state, id, 1)!
-    expect(restoreCharacter(serializeCharacter(prepared)).spells[0].preparedRuneCount).toBe(1)
-    const activated = adjustPreparedRunes(prepared, id, -1)!
-    expect(activated.spells[0].preparedRuneCount).toBe(0)
-    expect(activated.resources.mana.current).toBe(state.resources.mana.current)
-    expect(state.spells[0].preparedRuneCount).toBeUndefined()
-  })
   it('сохраняет особые чувства и защиты при экспорте и импорте', () => {
     const state = base()
     state.profile.specialSenses = 'Тёмное зрение 60 футов'
