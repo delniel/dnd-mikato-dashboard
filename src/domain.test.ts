@@ -204,9 +204,10 @@ describe('ресурсы и уровень', () => {
 
   it('возвращает отсутствующий порог опыта без аварии', () => {
     expect(thresholdForLevel(0)).toBeUndefined()
-    expect(thresholdForLevel(1)).toBe(320)
-    expect(thresholdForLevel(2)).toBe(380)
-    expect(thresholdForLevel(20)).toBe(3170)
+    expect(Array.from({ length: 20 }, (_, index) => thresholdForLevel(index + 1))).toEqual([
+      320, 380, 450, 530, 620, 720, 830, 950, 1080, 1220,
+      1370, 1530, 1700, 1880, 2070, 2270, 2480, 2700, 2930, 3170,
+    ])
     expect(thresholdForLevel(21)).toBeUndefined()
     expect(thresholdForLevel(25)).toBeUndefined()
   })
