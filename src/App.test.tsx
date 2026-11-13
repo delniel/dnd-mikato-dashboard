@@ -90,6 +90,9 @@ describe('игровые представления листа', () => {
     expect((await screen.findByText('Основная характеристика')).parentElement).toHaveTextContent(initial.profile.mainCharacteristic)
     expect(screen.getByText('Размер').parentElement).toHaveTextContent('Средний')
     expect(screen.getByText('Предыстория').parentElement).toHaveTextContent('Чужеземец')
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Основная характеристика' }), { target: { value: 'Сила' } })
+    expect(useCharacterStore.getState().profile.mainCharacteristic).toBe('Сила')
   })
 
   it('сохраняет особые чувства и защиты и показывает их в бою', async () => {
