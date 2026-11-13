@@ -80,6 +80,18 @@ describe('игровые представления листа', () => {
     expect(screen.getByText('Личная заметка')).toBeInTheDocument()
   })
 
+  it('показывает поля исходного листа: основную характеристику, размер и предысторию', async () => {
+    const initial = createInitialCharacter()
+    initial.profile.size = 'Средний'
+    initial.profile.background = 'Чужеземец'
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Персонаж')
+    expect((await screen.findByText('Основная характеристика')).parentElement).toHaveTextContent(initial.profile.mainCharacteristic)
+    expect(screen.getByText('Размер').parentElement).toHaveTextContent('Средний')
+    expect(screen.getByText('Предыстория').parentElement).toHaveTextContent('Чужеземец')
+  })
+
   it('подставляет бонус владения в базу бросков атаки', async () => {
     const initial = createInitialCharacter()
     initial.profile.proficiency = '+4'
