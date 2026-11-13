@@ -55,6 +55,18 @@ describe('игровые представления листа', () => {
     expect(screen.queryByText('Размер')).not.toBeInTheDocument()
   })
 
+  it('подставляет пассивное чувство только когда ручное значение не задано', async () => {
+    const initial = createInitialCharacter()
+    initial.senses.Восприятие = ''
+    initial.senses.Проницательность = '99'
+    initial.profile.proficiency = '+3'
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    const perception = await screen.findByText('Пассивное Восприятие')
+    expect(perception.parentElement).toHaveTextContent('15')
+    expect(screen.getByText('Пассивная Проницательность').parentElement).toHaveTextContent('99')
+  })
+
   it('показывает инициативу в боевых параметрах и отдельные заметки персонажа', async () => {
     const initial = createInitialCharacter()
     initial.profile.initiative = '+2'

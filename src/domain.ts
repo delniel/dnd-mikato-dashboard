@@ -110,6 +110,15 @@ export function calculateSkillBonus(score: string | number | undefined, proficie
   return modifier + (parseRuleNumber(proficiency) ?? 0) * rank
 }
 
+export function passiveSenseValue(name: string, characteristics: Characteristic[], proficiency: string): number | null {
+  const attribute = name === 'Анализ' ? 'Интеллект' : name === 'Восприятие' || name === 'Проницательность' ? 'Мудрость' : ''
+  const characteristic = characteristics.find((entry) => entry.name === attribute)
+  const skill = characteristic?.skills.find((entry) => entry.name === name)
+  if (!characteristic || !skill) return null
+  const bonus = calculateSkillBonus(characteristic.score, proficiency, skill.proficiencyRank)
+  return bonus === null ? null : 10 + bonus
+}
+
 /** A spell may list several characteristics; each is calculated independently. */
 export function spellCastingStats(characteristicNames: string, characteristics: Characteristic[], mainCharacteristic: string, proficiency: string, runic = false): Array<{ name: string; attack: number; saveDc: number; proficient: boolean }> {
   const names = characteristicNames.split(/\s*[/,;]\s*|\s+или\s+/iu).map((name) => name.trim().toLocaleLowerCase()).filter(Boolean)

@@ -3,7 +3,7 @@ import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronDown, Copy, Dic
 import { createJsonBackup, createLibraryBackup, materializeImportedCharacter, parseJsonBackup, restoreLibraryBackup, type BackupScope, type PreparedBackupImport } from './backup'
 import { cloneImage, loadImage, loadImages, loadLibrary, removeImages, saveImage, saveImages, saveLibrary, type ImageRecord } from './db'
 import { createBlankCharacter } from './data'
-import { calculateSkillBonus, characteristicModifier, manaRecoveryAmount, runeComplexityMetrics, specializationProgress, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
+import { calculateSkillBonus, characteristicModifier, manaRecoveryAmount, passiveSenseValue, runeComplexityMetrics, specializationProgress, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type Spell } from './domain'
 import { calculateCombatState, calculateSpellCombatStats, combatCategories, combatCategoryLabels, combatDurationLabels, combatDurationTypes, combatOperationLabels, combatOperationSymbols, combatOperations, describeCombatDuration, formatCombatNumber, formatSignedCombatNumber, type CombatCalculation, type CombatCategory, type CombatEffect, type CombatModifier, type CombatOperation } from './combat'
 import { addCharacter, applyLibrarySettings, characterForActivation, collectCharacterImageIds, createCharacterLibrary, createCharacterRecord, deleteCharacter, getActiveCharacter, renameCharacter, sanitizeFilename, selectCharacter as selectLibraryCharacter, syncActiveCharacter, type CharacterLibrary, type CharacterRecord } from './library'
 import { librarySnapshot, useLibraryStore } from './libraryStore'
@@ -520,7 +520,7 @@ function Overview() {
       </Card>
       <Card className="passive-senses">
         <div className="section-title"><div><p className="eyebrow">Чувства</p><h3>Пассивные чувства</h3></div></div>
-        <div className="sense-grid">{Object.entries(state.senses).map(([name, value]) => <FieldValue key={name} label={passiveSenseLabels[name] ?? name} value={value} onChange={(next) => state.setSense(name, next)} editable={state.editing} />)}</div>
+        <div className="sense-grid">{Object.entries(state.senses).map(([name, value]) => { const calculated = passiveSenseValue(name, state.characteristics, state.profile.proficiency || ''); const fallback = calculated === null ? '' : String(calculated); return <FieldValue key={name} label={passiveSenseLabels[name] ?? name} value={value} displayValue={value.trim() || fallback} placeholder={fallback} onChange={(next) => state.setSense(name, next)} editable={state.editing} /> })}</div>
       </Card>
     </section>
   </div>

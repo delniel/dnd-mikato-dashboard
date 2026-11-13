@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
+import { calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
 
 describe('автоматические модификаторы навыков', () => {
+  it('рассчитывает пассивное чувство по характеристике и владению, не добавляя пометку бонуса', () => {
+    const wisdom = [{ id: 'wis', name: 'Мудрость', score: '20', check: '', save: '', skills: [{ id: 'p', name: 'Восприятие', proficiencyRank: 1 as const, bonus: '+7' }] }]
+    expect(passiveSenseValue('Восприятие', wisdom, '+3')).toBe(18)
+    expect(passiveSenseValue('Анализ', wisdom, '+3')).toBeNull()
+  })
   it('показывает очки специализации за повышения уровня, не меняя выбранные значения', () => {
     const profile = { specializationMagic: '3', specializationCombat: '2', specializationCraft: '' }
     expect(specializationProgress(8, profile)).toEqual({ earned: 7, spent: 5, remaining: 2 })
