@@ -55,6 +55,26 @@ describe('чистый расчёт боевых параметров', () => {
     expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.save`)?.finalValue).toBe(13)
     expect(characteristic.score).toBe('30')
   })
+  it('применяет групповые цели ко всем шести характеристикам и не меняет базовые поля', () => {
+    const state = createInitialCharacter()
+    state.characteristics.forEach((characteristic) => { characteristic.check = '0'; characteristic.save = '0' })
+    const originals = state.characteristics.map(({ score, check, save }) => ({ score, check, save }))
+    state.combatEffects = [effect({ modifiers: [
+      { id: 'all-scores', target: 'characteristic.all.score', operation: 'ADD', value: 1 },
+      { id: 'all-checks', target: 'characteristic.all.check', operation: 'ADD', value: 2 },
+      { id: 'all-saves', target: 'characteristic.all.save', operation: 'ADD', value: 3 },
+    ] })]
+
+    const calculations = calculateCombatState(state)
+    for (const characteristic of state.characteristics) {
+      expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.score`)?.finalValue).toBe(Number(characteristic.score) + 1)
+      const check = calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.check`)
+      const save = calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.save`)
+      expect(check?.finalValue).toBe(check!.baseValue + 2)
+      expect(save?.finalValue).toBe(save!.baseValue + 3)
+    }
+    expect(state.characteristics.map(({ score, check, save }) => ({ score, check, save }))).toEqual(originals)
+  })
   it('читает типографские знаки и отображает явный знак положительных бонусов', () => {
     expect(parseCombatNumber('−4')).toBe(-4)
     expect(parseCombatNumber('+13')).toBe(13)

@@ -352,26 +352,39 @@ describe('игровые представления листа', () => {
     expect(useCharacterStore.getState().inventory[0].equipped).toBe(!item.equipped)
   })
 
-  it('оставляет текущие ресурсы обзора только для чтения, но позволяет редактировать максимумы HP и маны', async () => {
+  it('позволяет в обзоре редактировать текущее и максимальное HP общими данными персонажа', async () => {
     render(<App />)
     expect(await screen.findByText('81 / 81')).toBeInTheDocument()
     expect(screen.queryByLabelText('Хиты: текущее значение')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    fireEvent.change(screen.getByLabelText('Хиты: текущее значение'), { target: { value: '75' } })
     expect(screen.getByLabelText('Хиты: максимум')).toBeInTheDocument()
     expect(screen.getByLabelText('Мана: максимум')).toBeInTheDocument()
     expect(screen.getByLabelText('Превосходство: максимум')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Хиты: текущее значение')).not.toBeInTheDocument()
+    expect(useCharacterStore.getState().resources.hp.current).toBe(75)
     fireEvent.change(screen.getByLabelText('Хиты: максимум'), { target: { value: '90' } })
     expect(useCharacterStore.getState().resources.hp.max).toBe(90)
     fireEvent.change(screen.getByLabelText('Превосходство: максимум'), { target: { value: '8' } })
     expect(useCharacterStore.getState().resources.superiority.max).toBe(8)
     navigate('Бой')
+    expect(await screen.findByText('75 / 90')).toBeInTheDocument()
     expect(screen.getByLabelText('Хиты: текущее значение')).toBeInTheDocument()
     expect(screen.queryByLabelText('Хиты: максимум')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Хиты: текущее значение: плюс 10' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Мана: текущее значение: минус 10' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Превосходство: текущее значение: плюс 1' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Превосходство: текущее значение: плюс 5' })).not.toBeInTheDocument()
+  })
+
+  it('предлагает групповые параметры характеристик для боевых эффектов', async () => {
+    render(<App />)
+    navigate('Бой')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить эффект' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить изменение' }))
+    const target = screen.getByRole('combobox', { name: 'Целевой параметр' })
+    expect(within(target).getByRole('option', { name: 'Все характеристики: Значение' })).toBeInTheDocument()
+    expect(within(target).getByRole('option', { name: 'Все характеристики: Проверка' })).toBeInTheDocument()
+    expect(within(target).getByRole('option', { name: 'Все характеристики: Спасбросок' })).toBeInTheDocument()
   })
 
   it('синхронизирует HP между вкладками Бой и Обзор', async () => {

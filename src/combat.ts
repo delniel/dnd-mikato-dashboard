@@ -33,6 +33,12 @@ export type CombatTarget = {
   nonNegative?: boolean
 }
 
+export const combatGroupTargets = [
+  { id: 'characteristic.all.score', label: 'Все характеристики: Значение', field: 'score' },
+  { id: 'characteristic.all.check', label: 'Все характеристики: Проверка', field: 'check' },
+  { id: 'characteristic.all.save', label: 'Все характеристики: Спасбросок', field: 'save' },
+] as const
+
 export type CombatBreakdownStep = {
   effectId: string
   effectName: string
@@ -184,7 +190,11 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
   const safeEquipment = Number.isFinite(equipmentValue) ? equipmentValue : 0
   const active = [...effects].filter((effect) => effect.active).sort(effectOrder)
   const modifiers = active.flatMap((effect) => effect.modifiers.map((modifier, modifierIndex) => ({ effect, modifier, modifierIndex })))
-    .filter(({ modifier }) => modifier.target === target.id && Number.isFinite(modifier.value) && !(modifier.operation === 'DIVIDE' && modifier.value === 0))
+    .filter(({ modifier }) => {
+      const group = combatGroupTargets.find((entry) => entry.id === modifier.target)
+      const appliesToGroup = group && target.id.startsWith('characteristic.') && target.id.endsWith(`.${group.field}`)
+      return (modifier.target === target.id || appliesToGroup) && Number.isFinite(modifier.value) && !(modifier.operation === 'DIVIDE' && modifier.value === 0)
+    })
   let current = target.baseValue + safeEquipment
   const steps: CombatBreakdownStep[] = []
 

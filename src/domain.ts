@@ -98,7 +98,7 @@ const parseRuleNumber = (value: string | number | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const proficiencyMilestones = [1, 4, 7, 10, 13, 18]
+const proficiencyMilestones = [1, 3, 8, 12, 15]
 
 export function proficiencyBonusForLevel(level: number): number | null {
   if (!Number.isInteger(level) || level < 1 || level > 20) return null
@@ -164,15 +164,6 @@ export function runeComplexityMetrics(value: string | undefined): { complexity: 
 
 export function nextSkillProficiencyRank(rank: SkillProficiencyRank): SkillProficiencyRank {
   return rank === 0 ? 1 : rank === 1 ? 2 : 0
-}
-
-export function specializationProgress(level: number, profile: Record<string, string>): { earned: number; spent: number; remaining: number } | null {
-  const values = ['specializationMagic', 'specializationCombat', 'specializationCraft'].map((key) => (profile[key] ?? '').trim())
-  if (values.some((value) => value !== '' && !/^\d+$/.test(value))) return null
-  const spent = values.reduce((sum, value) => sum + (value ? Number(value) : 0), 0)
-  if (!Number.isSafeInteger(spent)) return null
-  const earned = Math.max(0, Math.trunc(level) - 1)
-  return { earned, spent, remaining: earned - spent }
 }
 
 export function levelUp(state: CharacterState): CharacterState {
