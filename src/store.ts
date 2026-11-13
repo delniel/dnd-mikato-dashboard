@@ -3,6 +3,7 @@ import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
 import {
   changeResource,
+  adjustSkillUses,
   convertCurrency,
   deductMana,
   deductSuperiority,
@@ -62,6 +63,7 @@ type Store = CharacterState & {
   upsertSpell: (spell: Spell) => void
   deleteSpell: (id: string) => void
   upsertSkill: (skill: Skill) => void
+  adjustSkillUses: (id: string, delta: number) => boolean
   deleteSkill: (id: string) => void
   upsertItem: (item: Item) => void
   toggleItemEquipped: (id: string) => void
@@ -149,6 +151,12 @@ export const useCharacterStore = create<Store>((set, get) => ({
   upsertSpell: (spell) => set((state) => ({ spells: updateList(state.spells, spell) })),
   deleteSpell: (id) => set((state) => ({ spells: state.spells.filter((spell) => spell.id !== id), favorites: state.favorites.filter((favorite) => favorite !== id) })),
   upsertSkill: (skill) => set((state) => ({ skills: updateList(state.skills, skill) })),
+  adjustSkillUses: (id, delta) => {
+    const next = adjustSkillUses(get(), id, delta)
+    if (!next) return false
+    set(next)
+    return true
+  },
   deleteSkill: (id) => set((state) => ({ skills: state.skills.filter((skill) => skill.id !== id) })),
   upsertItem: (item) => set((state) => ({ inventory: updateList(state.inventory, item) })),
   toggleItemEquipped: (id) => set((state) => ({ inventory: state.inventory.map((item) => item.id === id ? { ...item, equipped: !item.equipped } : item) })),

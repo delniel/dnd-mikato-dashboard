@@ -1,12 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
+import { adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, specializationProgress, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
 
 describe('автоматические модификаторы навыков', () => {
+  it('учитывает и сохраняет применения умения, соблюдая границы и старые данные', () => {
+    const state = base()
+    const id = state.skills[0].id
+    state.skills[0] = { ...state.skills[0], uses: { current: 1, max: 2, recovery: 'Короткий отдых' } }
+    const spent = adjustSkillUses(state, id, -1)!
+    expect(spent.skills[0].uses?.current).toBe(0)
+    expect(state.skills[0].uses?.current).toBe(1)
+    expect(adjustSkillUses(spent, id, -1)).toBeNull()
+    expect(adjustSkillUses(state, id, 2)).toBeNull()
+    expect(adjustSkillUses(state, id, 0.5)).toBeNull()
+    const restored = restoreCharacter(serializeCharacter(spent))
+    expect(restored.skills[0].uses).toEqual({ current: 0, max: 2, recovery: 'Короткий отдых' })
+    expect(restored.skills[1].uses).toBeUndefined()
+  })
   it('списывает кости превосходства без переплаты и позволяет отмену', () => {
     const state = base()
     state.resources.superiority = { current: 2, max: 2, dieType: '1d8' }

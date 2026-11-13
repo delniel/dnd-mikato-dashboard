@@ -15,7 +15,8 @@ export type SkillProficiencyRank = 0 | 1 | 2
 export type CharacterSkill = { id: string; name: string; bonus: string; proficiencyRank: SkillProficiencyRank }
 export type Characteristic = { id: string; name: string; score: string; check: string; save: string; skills: CharacterSkill[] }
 export type Spell = { id: string; name: string; imageId?: string; elements: string[]; characteristic: string; components: string; castingTime: string; target?: string; range: string; area?: string; spellType?: string; saveCheck?: string; additionalEffect?: string; attackAdjustment?: string; saveDcAdjustment?: string; runic?: boolean; runeComplexity?: string; runeAction?: string; runeTrigger?: string; duration: string; manaCost: number | null; prepared?: boolean; requiresPreparation?: boolean; damageOrHealing: string; damage?: string; healing?: string; difficulty: string; level: string; summary: string; description: string; effects: string; restrictions: string; tags: string[]; requiresConcentration: boolean; actionType: string }
-export type Skill = { id: string; name: string; imageId?: string; difficulty: string; actionType: string; summary: string; mechanics: string; condition: string; requirement: string; characteristic?: string; progression?: string; manaCost?: number | null; superiorityCost?: number | null; status: 'active' | 'passive' | 'reaction'; tags: string[] }
+export type SkillUses = { current: number; max: number; recovery: string }
+export type Skill = { id: string; name: string; imageId?: string; difficulty: string; actionType: string; summary: string; mechanics: string; condition: string; requirement: string; characteristic?: string; progression?: string; manaCost?: number | null; superiorityCost?: number | null; uses?: SkillUses; status: 'active' | 'passive' | 'reaction'; tags: string[] }
 export type Item = { id: string; name: string; imageId?: string; category: string; quantity: string; damage: string; damageType: string; range: string; properties: string; cost: string; description: string; equipped: boolean; note: string }
 export type CurrencyKey = 'PP' | 'GP' | 'SP' | 'CP'
 export type DiceRoll = { id: string; dice: Record<string, number>; results: Record<string, number[]>; total: number; createdAt: string }
@@ -53,7 +54,8 @@ const entrySchema = z.object({ id: z.string(), name: z.string(), imageId: z.stri
 const skillBonusSchema = z.object({ id: z.string(), name: z.string(), bonus: z.string(), proficiencyRank: z.union([z.literal(0), z.literal(1), z.literal(2)]) })
 const characteristicSchema = z.object({ id: z.string(), name: z.string(), score: z.string(), check: z.string(), save: z.string(), skills: z.array(skillBonusSchema) })
 const spellSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), elements: z.array(z.string()), characteristic: z.string(), components: z.string(), castingTime: z.string(), target: z.string().optional(), range: z.string(), area: z.string().optional(), spellType: z.string().optional(), saveCheck: z.string().optional(), additionalEffect: z.string().optional(), attackAdjustment: z.string().optional(), saveDcAdjustment: z.string().optional(), runic: z.boolean().optional(), runeComplexity: z.string().optional(), runeAction: z.string().optional(), runeTrigger: z.string().optional(), duration: z.string(), manaCost: z.number().nullable(), prepared: z.boolean().optional(), requiresPreparation: z.boolean().optional(), damageOrHealing: z.string(), damage: z.string().optional(), healing: z.string().optional(), difficulty: z.string(), level: z.string(), summary: z.string(), description: z.string(), effects: z.string(), restrictions: z.string(), tags: z.array(z.string()), requiresConcentration: z.boolean(), actionType: z.string() })
-const skillSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), difficulty: z.string(), actionType: z.string(), summary: z.string(), mechanics: z.string(), condition: z.string(), requirement: z.string(), characteristic: z.string().optional(), progression: z.string().optional(), manaCost: z.number().finite().min(0).nullable().optional(), superiorityCost: z.number().int().min(0).nullable().optional(), status: z.enum(['active', 'passive', 'reaction']), tags: z.array(z.string()) })
+const skillUsesSchema = z.object({ current: z.number().int().min(0), max: z.number().int().min(0), recovery: z.string() }).refine((uses) => uses.current <= uses.max, { message: 'Остаток не может превышать максимум применений' })
+const skillSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), difficulty: z.string(), actionType: z.string(), summary: z.string(), mechanics: z.string(), condition: z.string(), requirement: z.string(), characteristic: z.string().optional(), progression: z.string().optional(), manaCost: z.number().finite().min(0).nullable().optional(), superiorityCost: z.number().int().min(0).nullable().optional(), uses: skillUsesSchema.optional(), status: z.enum(['active', 'passive', 'reaction']), tags: z.array(z.string()) })
 const itemSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), category: z.string(), quantity: z.string(), damage: z.string(), damageType: z.string(), range: z.string(), properties: z.string(), cost: z.string(), description: z.string(), equipped: z.boolean(), note: z.string() })
 const noteSchema = z.object({ id: z.string(), title: z.string(), body: z.string(), tags: z.array(z.string()), imageId: z.string().optional(), createdAt: z.string(), updatedAt: z.string() })
 
@@ -251,6 +253,15 @@ export function deductMana(state: CharacterState, cost: number): CharacterState 
 export function deductSuperiority(state: CharacterState, cost: number): CharacterState | null {
   if (!Number.isSafeInteger(cost) || cost < 0 || cost > state.resources.superiority.current) return null
   return changeResource(state, 'superiority', state.resources.superiority.current - cost, `Расход превосходства: −${cost}`)
+}
+
+export function adjustSkillUses(state: CharacterState, skillId: string, delta: number): CharacterState | null {
+  if (!Number.isSafeInteger(delta)) return null
+  const skill = state.skills.find((entry) => entry.id === skillId)
+  if (!skill?.uses) return null
+  const next = skill.uses.current + delta
+  if (!Number.isSafeInteger(next) || next < 0 || next > skill.uses.max) return null
+  return { ...state, skills: state.skills.map((entry) => entry.id === skillId ? { ...entry, uses: { ...skill.uses!, current: next } } : entry) }
 }
 
 export function undoResource(state: CharacterState): CharacterState {

@@ -160,6 +160,28 @@ describe('игровые представления листа', () => {
     expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Боевой приём')?.superiorityCost).toBe(2)
   })
 
+  it('создаёт и учитывает ограниченные применения умения', async () => {
+    render(<App />)
+    navigate('Навыки +')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить навык' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Первая помощь' } })
+    fireEvent.change(screen.getByLabelText('Лимит применений (необязательно)'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Лимит применений (необязательно)'), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText('Лимит применений (необязательно)'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('Когда восстанавливаются применения'), { target: { value: 'Короткий отдых' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const entry = within(quick).getByRole('button', { name: /Первая помощь/ })
+    expect(entry).toHaveTextContent('2/2 применений')
+    fireEvent.click(entry)
+    expect(screen.getByText('Восстановление: Короткий отдых')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Потратить применение' }))
+    expect(screen.getByRole('heading', { name: 'Применения: 1 / 2' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуть применение' }))
+    expect(screen.getByRole('heading', { name: 'Применения: 2 / 2' })).toBeInTheDocument()
+  })
+
   it('не использует неподготовленное заклинание', async () => {
     const initial = createInitialCharacter()
     initial.spells[0] = { ...initial.spells[0], prepared: false }
