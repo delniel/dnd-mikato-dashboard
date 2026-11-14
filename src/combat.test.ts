@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCombatTargets, calculateCombatState, calculateCombatTarget, calculateSpellCombatStats, combatModifierSchema, formatSignedCombatNumber, migrateCombatEffects, parseCombatNumber, type CombatEffect, type CombatTarget } from './combat'
+import { allAttackTarget, buildCombatTargets, calculateCombatState, calculateCombatTarget, calculateSpellCombatStats, combatHpTargets, combatModifierSchema, formatSignedCombatNumber, migrateCombatEffects, parseCombatNumber, weaponAttackTarget, type CombatEffect, type CombatTarget } from './combat'
 import { createInitialCharacter } from './data'
 
 const armorClass: CombatTarget = { id: 'profile.armorClass', label: 'Класс доспеха', group: 'combat', baseValue: 17 }
@@ -20,6 +20,46 @@ const effect = (patch: Partial<CombatEffect> = {}): CombatEffect => ({
 })
 
 describe('чистый расчёт боевых параметров', () => {
+  it('пересчитывает атаки, проверки, спасброски и HP по счётчику копий без изменения листа', () => {
+    const state = createInitialCharacter()
+    state.resources.hp = { current: 60, max: 67 }
+    state.customResources = [{ id: 'copies', name: 'Копии', current: 0, max: 3 }]
+    state.combatEffects = migrateCombatEffects([effect({ category: 'special', modifiers: [
+      ...[allAttackTarget.id, 'characteristic.all.check', 'characteristic.all.save'].map((target) => ({
+        id: target, target, operation: 'SUBTRACT' as const, value: 0, resource: { id: 'copies', multiplier: 2, offset: 0 },
+      })),
+      ...Object.values(combatHpTargets).map((target) => ({
+        id: target, target, operation: 'DIVIDE' as const, value: 0, resource: { id: 'copies', multiplier: 1, offset: 1 },
+      })),
+    ] })])
+    const values = () => Object.fromEntries(calculateCombatState(state).map((result) => [result.target.id, result]))
+    for (const [copies, current, max] of [[0, 60, 67], [1, 30, 33], [2, 20, 22], [3, 15, 16]]) {
+      state.customResources[0].current = copies
+      const result = values()
+      expect(result[weaponAttackTarget.id].finalValue).toBe(copies ? -2 * copies : 0)
+      expect(result[combatHpTargets.current].finalValue).toBe(current)
+      expect(result[combatHpTargets.max].finalValue).toBe(max)
+      for (const entry of Object.values(result).filter(({ target }) => /\.(check|save)$/.test(target.id))) expect(entry.effectDelta).toBe(copies ? -2 * copies : 0)
+    }
+    expect(state.resources.hp).toEqual({ current: 60, max: 67 })
+    state.customResources = []
+    expect(values()[combatHpTargets.max].finalValue).toBe(67)
+  })
+
+  it('считает бонус урона от зарядов и пропускает нулевой делитель', () => {
+    const state = createInitialCharacter()
+    state.customResources = [{ id: 'charges', name: 'Заряды', current: 3, max: 10 }]
+    const resource = { id: 'charges', multiplier: 1, offset: 0 }
+    state.combatEffects = [effect({ modifiers: [
+      { id: 'damage', target: 'profile.damageBonus', operation: 'ADD', value: 0, resource },
+      { id: 'division', target: combatHpTargets.max, operation: 'DIVIDE', value: 0, resource },
+    ] })]
+    const find = (id: string) => calculateCombatState(state).find(({ target }) => target.id === id)?.finalValue
+    expect(find('profile.damageBonus')).toBe(3)
+    state.customResources[0].current = 0
+    expect(find('profile.damageBonus')).toBe(0)
+    expect(find(combatHpTargets.max)).toBe(state.resources.hp.max)
+  })
   it('учитывает отдельные скорости и эффекты без изменения базовых значений', () => {
     const state = createInitialCharacter()
     state.profile.flySpeed = '30'

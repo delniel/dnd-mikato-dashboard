@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { Children, isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronDown, Copy, Dices, Download, FileArchive, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Swords, Trash2, Upload, UserRound, Users, WandSparkles, X, type LucideIcon } from 'lucide-react'
 import { createJsonBackup, createLibraryBackup, materializeImportedCharacter, parseJsonBackup, restoreLibraryBackup, type BackupScope, type PreparedBackupImport } from './backup'
 import { cloneImage, loadImage, loadImages, loadLibrary, removeImages, saveImage, saveImages, saveLibrary, type ImageRecord } from './db'
 import { createBlankCharacter } from './data'
 import { automaticSavingThrow, calculateSkillBonus, characteristicModifier, effectiveProficiency, isCharacteristicScoreOutsideCurrentRange, manaRecoveryAmount, passiveSenseValue, runeComplexityMetrics, singleDieKey, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type SkillCostMode, type Spell, type SpellManaCostOption } from './domain'
-import { calculateCombatState, calculateSpellCombatStats, combatCategories, combatCategoryLabels, combatDurationLabels, combatDurationTypes, combatGroupTargets, combatOperationLabels, combatOperationSymbols, combatOperations, describeCombatDuration, formatCombatNumber, formatSignedCombatNumber, type CombatCalculation, type CombatCategory, type CombatEffect, type CombatModifier, type CombatOperation } from './combat'
+import { allAttackTarget, combatHpTargets, resolveCombatModifier, weaponAttackTarget, calculateCombatState, calculateSpellCombatStats, combatCategories, combatCategoryLabels, combatDurationLabels, combatDurationTypes, combatGroupTargets, combatOperationLabels, combatOperationSymbols, combatOperations, describeCombatDuration, formatCombatNumber, formatSignedCombatNumber, type CombatCalculation, type CombatCategory, type CombatEffect, type CombatModifier, type CombatOperation } from './combat'
 import { addCharacter, applyLibrarySettings, characterForActivation, collectCharacterImageIds, createCharacterLibrary, createCharacterRecord, deleteCharacter, getActiveCharacter, renameCharacter, sanitizeFilename, selectCharacter as selectLibraryCharacter, syncActiveCharacter, type CharacterLibrary, type CharacterRecord } from './library'
 import { librarySnapshot, useLibraryStore } from './libraryStore'
 import { useCharacterStore } from './store'
@@ -432,8 +432,8 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
-    const focusable = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])]
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [href], [tabindex]:not([tabindex="-1"])'
+    const focusable = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])].filter((element) => element.getClientRects().length > 0)
     focusable()[0]?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { closeRef.current(); return }
@@ -447,7 +447,10 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
     return () => { window.removeEventListener('keydown', onKeyDown); document.body.style.overflow = previousOverflow; previousFocus?.focus() }
   }, [])
 
-  return <div className="drawer-backdrop" onMouseDown={onClose}><section ref={dialogRef} className="drawer editor-drawer" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><button className="close" type="button" aria-label="Закрыть" onClick={onClose}><X /></button><h2>{title}</h2>{children}</section></div>
+  const content = Children.toArray(children)
+  const last = content[content.length - 1]
+  const hasSave = isValidElement<{ children?: ReactNode }>(last) && last.type === 'button' && Children.toArray(last.props.children).filter((child) => typeof child === 'string').join('').startsWith('Сохранить')
+  return <div className="drawer-backdrop" onMouseDown={onClose}><section ref={dialogRef} className="drawer editor-drawer" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><header className="drawer-heading"><h2>{title}</h2><button className="close" type="button" aria-label="Закрыть" onClick={onClose}><X /></button></header>{hasSave ? content.slice(0, -1) : children}{hasSave && <footer className="editor-actions"><button className="button ghost" type="button" onClick={onClose}>Отмена</button>{last}</footer>}</section></div>
 }
 
 function useImageUrl(imageId?: string) {
@@ -569,7 +572,7 @@ function Overview() {
   </div>
 }
 
-function ResourceCard({ title, caption, color, resourceKey, interactive = false, editMaximum = false, editCurrent = false, showHitDieGuidance = false }: { title: string; caption: string; color: string; resourceKey: ResourceKey; interactive?: boolean; editMaximum?: boolean; editCurrent?: boolean; showHitDieGuidance?: boolean }) {
+function ResourceCard({ title, caption, color, resourceKey, interactive = false, editMaximum = false, editCurrent = false, showHitDieGuidance = false, hpWithEffects }: { title: string; caption: string; color: string; resourceKey: ResourceKey; interactive?: boolean; editMaximum?: boolean; editCurrent?: boolean; showHitDieGuidance?: boolean; hpWithEffects?: string }) {
   const state = useCharacterStore()
   const resource = state.resources[resourceKey]
   const dieType = state.resources.superiority.dieType ?? ''
@@ -580,6 +583,7 @@ function ResourceCard({ title, caption, color, resourceKey, interactive = false,
       ? <DieChoice label="Кость превосходства" value={dieType} onChange={state.setSuperiorityDie} />
       : <p className="resource-detail"><span>Кость превосходства</span><strong>{noValue(dieType)}</strong></p>)}
     {resourceKey === 'hp' ? <HpProgress current={resource.current} temporary={resource.temporary ?? 0} max={resource.max} /> : <Progress value={resource.current} max={resource.max} color={color} />}
+    {hpWithEffects && <p className="resource-detail"><span>HP с эффектами</span><strong>{hpWithEffects}</strong></p>}
     {(interactive || (editCurrent && state.editing)) && <Counter label={`${title}: текущее значение`} value={resource.current} onChange={(value) => state.setResource(resourceKey, value)} onAdjust={(delta) => state.adjust(resourceKey, delta)} steps={resourceKey === 'superiority' ? [1] : [1, 5, 10]} />}
     {interactive && resourceKey === 'superiority' && <>
       <button className="button ghost resource-action" type="button" disabled={resource.current < 1 || !singleDieKey(dieType)} onClick={() => {
@@ -623,7 +627,13 @@ function CustomResources() {
 function CombatPage() {
   const state = useCharacterStore()
   const calculations = calculateCombatState(state)
-  const combatCalculations = calculations.filter((calculation) => calculation.target.group === 'combat')
+  const hpCurrent = calculations.find(({ target }) => target.id === combatHpTargets.current)
+  const hpMax = calculations.find(({ target }) => target.id === combatHpTargets.max)
+  const hpWithEffects = hpCurrent && hpMax && (hpCurrent.effectDelta !== 0 || hpMax.effectDelta !== 0)
+    ? `${hpCurrent.finalValue} / ${hpMax.finalValue}` : undefined
+  const combatCalculations = calculations.filter(({ target, steps }) => target.group === 'combat'
+    && !Object.values(combatHpTargets).some((id) => id === target.id)
+    && ((target.id !== weaponAttackTarget.id && target.id !== 'profile.damageBonus') || steps.some((step) => step.value !== 0) || target.baseValue !== 0))
   const abilityCalculations = state.characteristics.map((characteristic) => ({
     id: characteristic.id,
     name: characteristic.name,
@@ -647,7 +657,7 @@ function CombatPage() {
     <section className="combat-section">
       <div className="section-title"><div><p className="eyebrow">Общие данные персонажа</p><h2>Боевые ресурсы</h2></div><span className="mode-pill">Максимумы изменяются в основных параметрах</span></div>
       <div className="resource-grid combat-resources">
-        <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" interactive showHitDieGuidance />
+        <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" interactive showHitDieGuidance hpWithEffects={hpWithEffects} />
         <ResourceCard title="Мана" caption="Энергия" color="mana" resourceKey="mana" interactive />
         <ResourceCard title="Превосходство" caption="Ресурс" color="bone" resourceKey="superiority" interactive />
       </div>
@@ -744,6 +754,7 @@ function EffectCard({ effect, onEdit }: { effect: CombatEffect; onEdit: () => vo
   const state = useCharacterStore()
   const targetLabels = new Map(calculateCombatState(state).map((calculation) => [calculation.target.id, calculation.target.label]))
   for (const target of combatGroupTargets) targetLabels.set(target.id, target.label)
+  targetLabels.set(allAttackTarget.id, allAttackTarget.label)
   targetLabels.set('profile.spellAttackBonus', 'Атака заклинанием')
   if (!targetLabels.has('profile.spellSaveDc')) targetLabels.set('profile.spellSaveDc', 'Сложность спасброска заклинаний')
   return <Card className={`effect-card ${effect.category} ${effect.active ? '' : 'inactive'}`}>
@@ -751,7 +762,11 @@ function EffectCard({ effect, onEdit }: { effect: CombatEffect; onEdit: () => vo
     {effect.source && <p className="effect-source">Источник: {effect.source}</p>}
     <div className="effect-description"><FormattedText text={effect.description || 'Описание не указано.'} /></div>
     <p className="effect-duration">{effect.concentration && <span>Концентрация · </span>}{describeCombatDuration(effect.duration)}</p>
-    {effect.modifiers.length > 0 && <ul className="effect-modifiers">{effect.modifiers.map((modifier) => <li key={modifier.id}>{combatOperationSymbols[modifier.operation]}{formatCombatNumber(modifier.value)} <span>{targetLabels.get(modifier.target) ?? modifier.target}</span></li>)}</ul>}
+    {effect.modifiers.length > 0 && <ul className="effect-modifiers">{effect.modifiers.map((modifier) => {
+      const value = resolveCombatModifier(modifier, state.customResources)
+      const resource = modifier.resource && state.customResources.find(({ id }) => id === modifier.resource?.id)
+      return <li key={modifier.id}>{value === null ? 'Не применяется' : combatOperationSymbols[modifier.operation] + formatCombatNumber(value)} <span>{targetLabels.get(modifier.target) ?? modifier.target}{modifier.resource && ` · ${resource?.name ?? 'Ресурс удалён'}`}</span></li>
+    })}</ul>}
     {effect.duration.type === 'rounds' && <div className="effect-rounds"><span>Осталось раундов</span><Counter label={`${effect.name}: оставшиеся раунды`} value={effect.duration.roundsRemaining ?? 0} onChange={(value) => state.setCombatEffectRounds(effect.id, value)} onAdjust={(delta) => state.setCombatEffectRounds(effect.id, (effect.duration.roundsRemaining ?? 0) + delta)} /></div>}
     <div className="effect-actions"><button className="button ghost small" type="button" onClick={onEdit}><Pencil size={14} />Изменить</button><button className="button ghost small" type="button" onClick={() => { if (window.confirm(`Снять эффект «${effect.name}»?`)) state.deleteCombatEffect(effect.id) }}><Trash2 size={14} />Снять</button></div>
   </Card>
@@ -764,6 +779,7 @@ function CombatEffectEditor({ effect, calculations, onClose }: { effect: CombatE
   const targets = [
     ...calculations.filter((calculation) => calculation.target.group === 'combat').map((calculation) => ({ id: calculation.target.id, label: calculation.target.id === 'profile.spellAttackBonus' ? 'Атака заклинанием' : calculation.target.label })),
     ...combatGroupTargets.map(({ id, label }) => ({ id, label })),
+    allAttackTarget,
     ...calculations.filter((calculation) => calculation.target.group === 'ability').map((calculation) => ({ id: calculation.target.id, label: calculation.target.label })),
   ]
   if (!targets.some((target) => target.id === 'profile.spellAttackBonus')) targets.push({ id: 'profile.spellAttackBonus', label: 'Атака заклинанием' })
@@ -781,8 +797,8 @@ function CombatEffectEditor({ effect, calculations, onClose }: { effect: CombatE
   }
   const save = () => {
     if (!draft.name.trim()) return setError('Укажите название эффекта.')
-    if (draft.modifiers.some((modifier) => !Number.isFinite(modifier.value))) return setError('Все изменения должны содержать корректные числа.')
-    if (draft.modifiers.some((modifier) => modifier.operation === 'DIVIDE' && modifier.value === 0)) return setError('Деление на ноль запрещено.')
+    if (draft.modifiers.some(({ value, resource }) => !Number.isFinite(value) || (resource && (!Number.isFinite(resource.multiplier) || !Number.isFinite(resource.offset))))) return setError('Все изменения должны содержать корректные числа.')
+    if (draft.modifiers.some(({ operation, value, resource }) => operation === 'DIVIDE' && !resource && value === 0)) return setError('Деление на ноль запрещено.')
     if (draft.duration.type === 'rounds' && (!Number.isFinite(draft.duration.roundsRemaining) || (draft.duration.roundsRemaining ?? -1) < 0)) return setError('Укажите неотрицательное количество раундов.')
     state.upsertCombatEffect({ ...draft, name: draft.name.trim(), source: draft.source.trim() })
     onClose()
@@ -801,7 +817,15 @@ function CombatEffectEditor({ effect, calculations, onClose }: { effect: CombatE
       <label className="check"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />Эффект активен</label>
     </div>
     <section className="modifier-editor"><div className="section-title"><div><p className="eyebrow">Безопасные операции</p><h3>Числовые изменения</h3></div><button className="button ghost small" type="button" disabled={!targets.length} onClick={addModifier}><Plus size={14} />Добавить изменение</button></div>
-      {draft.modifiers.length ? <div className="modifier-list">{draft.modifiers.map((modifier) => <div className="modifier-row" key={modifier.id}><label><span>Параметр</span><select aria-label="Целевой параметр" value={modifier.target} onChange={(event) => updateModifier(modifier.id, { target: event.target.value })}>{targets.map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label><label><span>Операция</span><select aria-label="Операция изменения" value={modifier.operation} onChange={(event) => updateModifier(modifier.id, { operation: event.target.value as CombatOperation })}>{combatOperations.map((operation) => <option key={operation} value={operation}>{combatOperationLabels[operation]}</option>)}</select></label><label><span>Число</span><input aria-label="Число изменения" type="number" step="any" value={modifier.value} onChange={(event) => updateModifier(modifier.id, { value: Number(event.target.value) })} /></label><button className="modifier-delete" type="button" aria-label="Удалить изменение" onClick={() => setDraft({ ...draft, modifiers: draft.modifiers.filter((entry) => entry.id !== modifier.id) })}><Trash2 size={16} /></button></div>)}</div> : <p className="quiet">Эффект может быть текстовым и не содержать числовых изменений.</p>}
+      {draft.modifiers.length ? <div className="modifier-list">{draft.modifiers.map((modifier) => <div className="modifier-row" key={modifier.id}><label><span>Параметр</span><select aria-label="Целевой параметр" value={modifier.target} onChange={(event) => updateModifier(modifier.id, { target: event.target.value })}>{targets.map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select></label><label><span>Операция</span><select aria-label="Операция изменения" value={modifier.operation} onChange={(event) => updateModifier(modifier.id, { operation: event.target.value as CombatOperation })}>{combatOperations.map((operation) => <option key={operation} value={operation}>{combatOperationLabels[operation]}</option>)}</select></label><div className="modifier-value">
+        {!modifier.resource && <label><span>Число</span><input aria-label="Число изменения" type="number" step="any" value={modifier.value} onChange={(event) => updateModifier(modifier.id, { value: Number(event.target.value) })} /></label>}
+        {(state.customResources.length > 0 || modifier.resource) && <label><span>Источник числа</span><select aria-label="Источник числа" value={modifier.resource?.id ?? ''} onChange={(event) => updateModifier(modifier.id, { resource: event.target.value ? { id: event.target.value, multiplier: modifier.resource?.multiplier ?? 1, offset: modifier.resource?.offset ?? 0 } : undefined })}><option value="">Вручную</option>{modifier.resource && !state.customResources.some(({ id }) => id === modifier.resource?.id) && <option value={modifier.resource.id}>Ресурс удалён</option>}{state.customResources.map(({ id, name }) => <option key={id} value={id}>{name || 'Без названия'}</option>)}</select></label>}
+      </div><button className="modifier-delete" type="button" aria-label="Удалить изменение" onClick={() => setDraft({ ...draft, modifiers: draft.modifiers.filter((entry) => entry.id !== modifier.id) })}><Trash2 size={16} /></button>
+      {modifier.resource && <div className="modifier-formula">
+        <label><span>Умножить ресурс на</span><input type="number" step="any" value={modifier.resource.multiplier} onChange={(event) => updateModifier(modifier.id, { resource: { ...modifier.resource!, multiplier: Number(event.target.value) } })} /></label>
+        <label><span>Затем прибавить</span><input type="number" step="any" value={modifier.resource.offset} onChange={(event) => updateModifier(modifier.id, { resource: { ...modifier.resource!, offset: Number(event.target.value) } })} /></label>
+        <small className="quiet">Сейчас: {resolveCombatModifier(modifier, state.customResources) ?? 'не применяется'}</small>
+      </div>}</div>)}</div> : <p className="quiet">Эффект может быть текстовым и не содержать числовых изменений.</p>}
     </section>
     {error && <p className="notice error-notice" role="alert">{error}</p>}
     <button className="button primary" type="button" onClick={save}>Сохранить эффект</button>
@@ -976,7 +1000,8 @@ function SpellDetail({ spell, onClose }: { spell: Spell; onClose: () => void }) 
   const combatEffects = useCharacterStore((state) => state.combatEffects)
   const level = useCharacterStore((state) => state.level)
   const castingProfile = spell.runic ? profile : { ...profile, proficiency: String(effectiveProficiency(level, profile.proficiency) ?? '') }
-  const castingStats = calculateSpellCombatStats(spell.characteristic, { characteristics, profile: castingProfile, combatEffects, level }, spell.runic === true, { attack: spell.attackAdjustment, saveDc: spell.saveDcAdjustment })
+  const customResources = useCharacterStore((state) => state.customResources)
+  const castingStats = calculateSpellCombatStats(spell.characteristic, { characteristics, profile: castingProfile, combatEffects, level, customResources }, spell.runic === true, { attack: spell.attackAdjustment, saveDc: spell.saveDcAdjustment })
   const runeMetrics = spell.runic ? runeComplexityMetrics(spell.runeComplexity) : null
   const [message, setMessage] = useState('')
   const useSpell = (cost: number, label: string) => {

@@ -8,7 +8,7 @@ export const combatDurationTypes = ['manual', 'rounds', 'untilEndOfCombat', 'con
 export type CombatCategory = typeof combatCategories[number]
 export type CombatOperation = typeof combatOperations[number]
 export type CombatDurationType = typeof combatDurationTypes[number]
-export type CombatModifier = { id: string; target: string; operation: CombatOperation; value: number }
+export type CombatModifier = { id: string; target: string; operation: CombatOperation; value: number; resource?: { id: string; multiplier: number; offset: number } }
 export type CombatDuration = { type: CombatDurationType; roundsRemaining?: number }
 export type CombatEffect = {
   id: string
@@ -59,6 +59,11 @@ export type CombatCalculation = {
   setConflict: boolean
 }
 
+export const allAttackTarget = { id: 'attack.all', label: 'Все броски атаки' }
+export const weaponAttackTarget = { id: 'attack.weapon', label: 'Поправка к атаке оружием' }
+export const combatHpTargets = { current: 'resources.hp.current', max: 'resources.hp.max' } as const
+type CombatStateInput = Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects' | 'level'> & Partial<Pick<CharacterState, 'customResources' | 'resources'>>
+
 const durationSchema = z.object({
   type: z.enum(combatDurationTypes),
   roundsRemaining: z.number().int().min(0).optional(),
@@ -73,8 +78,9 @@ export const combatModifierSchema = z.object({
   target: z.string().min(1),
   operation: z.enum(combatOperations),
   value: z.number().finite(),
+  resource: z.object({ id: z.string().min(1), multiplier: z.number().finite(), offset: z.number().finite() }).optional(),
 }).superRefine((modifier, context) => {
-  if (modifier.operation === 'DIVIDE' && modifier.value === 0) {
+  if (modifier.operation === 'DIVIDE' && !modifier.resource && modifier.value === 0) {
     context.addIssue({ code: 'custom', message: 'Деление на ноль запрещено' })
   }
 })
@@ -124,6 +130,7 @@ export function migrateCombatEffects(value: unknown): CombatEffect[] {
           target: typeof modifier.target === 'string' ? modifier.target : '',
           operation: modifier.operation,
           value: modifier.value,
+          resource: modifier.resource,
         })
         return parsed.success ? [parsed.data] : []
       }) : [],
@@ -163,7 +170,7 @@ export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'char
     const baseValue = definition.baseKey === 'proficiency'
       ? effectiveProficiency(state.level, state.profile.proficiency)
       : parseCombatNumber(state.profile[definition.key])
-    if (baseValue !== null) targets.push({ id: `profile.${definition.key}`, label: definition.label, group: 'combat', baseValue, unit: definition.unit, nonNegative: definition.nonNegative })
+    if (baseValue !== null || definition.key === 'damageBonus') targets.push({ id: `profile.${definition.key}`, label: definition.label, group: 'combat', baseValue: baseValue ?? 0, unit: definition.unit, nonNegative: definition.nonNegative })
   }
   for (const characteristic of state.characteristics) {
     const fields: Array<['score' | 'check' | 'save', string]> = [['score', 'Значение'], ['check', 'Проверка'], ['save', 'Спасбросок']]
@@ -180,6 +187,20 @@ export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'char
 }
 
 const effectOrder = (left: CombatEffect, right: CombatEffect) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
+
+export function resolveCombatModifier(modifier: CombatModifier, resources: CharacterState['customResources']): number | null {
+  const formula = modifier.resource
+  const current = formula && resources.find(({ id }) => id === formula.id)?.current
+  const value = formula ? (current === undefined ? NaN : current * formula.multiplier + formula.offset) : modifier.value
+  return Number.isFinite(value) && !(modifier.operation === 'DIVIDE' && value === 0) ? value : null
+}
+
+function resolvedEffects(state: CombatStateInput): CombatEffect[] {
+  return state.combatEffects.map((effect) => ({ ...effect, modifiers: effect.modifiers.flatMap((modifier) => {
+    const value = resolveCombatModifier(modifier, state.customResources ?? [])
+    return value === null ? [] : [{ ...modifier, value, resource: undefined }]
+  }) }))
+}
 const categoryOrder: CombatCategory[] = ['positive', 'negative', 'special']
 const operationOrderByCategory: Record<CombatCategory, CombatOperation[]> = {
   positive: ['SET', 'ADD', 'SUBTRACT', 'DIVIDE', 'MULTIPLY'],
@@ -194,7 +215,8 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
     .filter(({ modifier }) => {
       const group = combatGroupTargets.find((entry) => entry.id === modifier.target)
       const appliesToGroup = group && target.id.startsWith('characteristic.') && target.id.endsWith(`.${group.field}`)
-      return (modifier.target === target.id || appliesToGroup) && Number.isFinite(modifier.value) && !(modifier.operation === 'DIVIDE' && modifier.value === 0)
+      const appliesToAttack = modifier.target === allAttackTarget.id && (target.id === weaponAttackTarget.id || target.id === 'profile.spellAttackBonus')
+      return !modifier.resource && (modifier.target === target.id || appliesToGroup || appliesToAttack) && Number.isFinite(modifier.value) && !(modifier.operation === 'DIVIDE' && modifier.value === 0)
     })
   let current = target.baseValue + safeEquipment
   const steps: CombatBreakdownStep[] = []
@@ -216,6 +238,7 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
   const setters = modifiers.filter(({ modifier }) => modifier.operation === 'SET')
 
   if (target.nonNegative) current = Math.max(0, current)
+  if (target.id === combatHpTargets.current || target.id === combatHpTargets.max) current = Math.floor(current)
   return {
     target,
     baseValue: target.baseValue,
@@ -227,8 +250,14 @@ export function calculateCombatTarget(target: CombatTarget, effects: CombatEffec
   }
 }
 
-export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects' | 'level'>): CombatCalculation[] {
+export function calculateCombatState(input: CombatStateInput): CombatCalculation[] {
+  const state = { ...input, combatEffects: resolvedEffects(input) }
   const targets = buildCombatTargets(state)
+  targets.push({ ...weaponAttackTarget, group: 'combat', baseValue: 0 })
+  if (state.resources) targets.push(
+    { id: combatHpTargets.current, label: 'HP: текущее', group: 'combat', baseValue: state.resources.hp.current, nonNegative: true },
+    { id: combatHpTargets.max, label: 'HP: максимум', group: 'combat', baseValue: state.resources.hp.max, nonNegative: true },
+  )
   return targets.map((target) => {
     const characteristic = state.characteristics.find((entry) =>
       (target.id === `characteristic.${entry.id}.check` && !entry.check.trim()) ||
@@ -253,7 +282,8 @@ export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'ch
   })
 }
 
-export function calculateSpellCombatStats(characteristicNames: string, state: Pick<CharacterState, 'profile' | 'characteristics' | 'combatEffects' | 'level'>, runic = false, adjustments: { attack?: string; saveDc?: string } = {}) {
+export function calculateSpellCombatStats(characteristicNames: string, input: CombatStateInput, runic = false, adjustments: { attack?: string; saveDc?: string } = {}) {
+  const state = { ...input, combatEffects: resolvedEffects(input) }
   const scoreTargets = buildCombatTargets(state).filter((target) => target.id.startsWith('characteristic.') && target.id.endsWith('.score'))
   const effectiveCharacteristics = state.characteristics.map((characteristic) => {
     const target = scoreTargets.find((entry) => entry.id === `characteristic.${characteristic.id}.score`)
