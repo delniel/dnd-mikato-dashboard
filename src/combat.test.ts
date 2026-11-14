@@ -55,6 +55,20 @@ describe('чистый расчёт боевых параметров', () => {
     expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.save`)?.finalValue).toBe(13)
     expect(characteristic.score).toBe('30')
   })
+  it('автоматически применяет владение к спасброску главной характеристики с 4-го уровня', () => {
+    const state = createInitialCharacter()
+    state.level = 4
+    state.profile.proficiency = ''
+    state.profile.mainCharacteristic = 'Ловкость'
+    const dexterity = state.characteristics.find((entry) => entry.name === 'Ловкость')!
+    dexterity.score = '16'
+    dexterity.check = ''
+    dexterity.save = ''
+
+    const save = calculateCombatState(state).find((entry) => entry.target.id === `characteristic.${dexterity.id}.save`)
+    expect(save?.finalValue).toBe(5)
+    expect(dexterity.save).toBe('')
+  })
   it('применяет групповые цели ко всем шести характеристикам и не меняет базовые поля', () => {
     const state = createInitialCharacter()
     state.characteristics.forEach((characteristic) => { characteristic.check = '0'; characteristic.save = '0' })

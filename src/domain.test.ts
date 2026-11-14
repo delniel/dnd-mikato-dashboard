@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { createInitialCharacter } from './data'
+import { createBlankCharacter, createInitialCharacter, createUrumirCharacter } from './data'
 import type { CombatEffect } from './combat'
-import { adjustPreparedRunes, adjustSkillUses, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductMana, deductSuperiority, effectiveProficiency, isCharacteristicScoreOutsideCurrentRange, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, proficiencyBonusForLevel, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, spellCastingStats, thresholdForLevel, undoResource } from './domain'
+import { adjustPreparedRunes, adjustSkillUses, automaticSavingThrow, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductHitDice, deductHp, deductMana, deductSkillCosts, deductSuperiority, effectiveProficiency, isCharacteristicScoreOutsideCurrentRange, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, proficiencyBonusForLevel, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
 
 const base = () => createInitialCharacter()
+
+describe('пустая публичная заготовка', () => {
+  it('не включает данные Урумира и оставляет структуру листа готовой к заполнению', () => {
+    const blank = createBlankCharacter()
+    expect(blank.profile.name).toBe('')
+    expect(blank.profile.playerName).toBe('')
+    expect(blank.resources.hp).toEqual({ current: 0, max: 0, temporary: 0 })
+    expect(blank.spells).toEqual([])
+    expect(blank.skills).toEqual([])
+    expect(blank.inventory).toEqual([])
+    expect(blank.characteristics).toHaveLength(6)
+    expect(blank.characteristics.every((entry) => entry.score === '' && entry.check === '' && entry.save === '')).toBe(true)
+    expect(createUrumirCharacter().profile.name).toBe('Урумир')
+  })
+})
 
 describe('автоматические модификаторы навыков', () => {
   it('распознаёт значения характеристик вне актуального диапазона без их изменения', () => {
@@ -89,9 +104,9 @@ describe('автоматические модификаторы навыков',
     expect(passiveSenseValue('Анализ', wisdom, '+3')).toBeNull()
   })
   it('рассчитывает бонус владения по подтверждённым уровням, сохраняя ручное значение', () => {
-    expect([1, 2, 3, 7, 8, 11, 12, 14, 15, 20].map(proficiencyBonusForLevel)).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+    expect([1, 2, 3, 4, 6, 7, 9, 10, 12, 13, 17, 18, 20].map(proficiencyBonusForLevel)).toEqual([1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
     expect(proficiencyBonusForLevel(21)).toBeNull()
-    expect(effectiveProficiency(11, '')).toBe(3)
+    expect(effectiveProficiency(11, '')).toBe(4)
     expect(effectiveProficiency(11, '+3')).toBe(3)
     expect(effectiveProficiency(11, '+4')).toBe(4)
   })
@@ -107,12 +122,13 @@ describe('автоматические модификаторы навыков',
     expect(spellCastingStats('Интеллект / Харизма', characteristics, 'Интеллект', '+3')).toEqual([{ name: 'Интеллект', attack: 7, saveDc: 15, proficient: true }, { name: 'Харизма', attack: 2, saveDc: 10, proficient: false }])
     expect(spellCastingStats('Неизвестно', characteristics, 'Интеллект', '+3')).toEqual([])
   })
-  it('рассчитывает модификатор характеристики по таблице от 0 до 30', () => {
+  it('рассчитывает модификатор по подтверждённой таблице 0–30 и не экстраполирует выше неё', () => {
     expect(Array.from({ length: 31 }, (_, score) => characteristicModifier(score))).toEqual([
       -5, -5, -4, -4, -3, -3, -2, -2, -1, -1, 0, 0, 1, 1, 2, 2,
       3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10,
     ])
-    expect(characteristicModifier(40)).toBe(15)
+    expect(characteristicModifier(31)).toBeNull()
+    expect(characteristicModifier(40)).toBeNull()
   })
 
   it('добавляет бонус владения ноль, один или два раза', () => {
@@ -120,6 +136,13 @@ describe('автоматические модификаторы навыков',
     expect(calculateSkillBonus('20', '+3', 1)).toBe(8)
     expect(calculateSkillBonus('20', '+3', 2)).toBe(11)
     expect(calculateSkillBonus('20', '+4', 2)).toBe(13)
+  })
+
+  it('добавляет владение к спасброску основной характеристики начиная с 4-го уровня', () => {
+    const dexterity = { name: 'Ловкость', score: '16' }
+    expect(automaticSavingThrow(dexterity, 'Ловкость', 3, '+2')).toBe(3)
+    expect(automaticSavingThrow(dexterity, 'Ловкость', 4, '+2')).toBe(5)
+    expect(automaticSavingThrow(dexterity, 'Телосложение', 4, '+2')).toBe(3)
   })
 
   it('циклически переключает владение 0 → 1 → 2 → 0', () => {
@@ -164,6 +187,55 @@ describe('ресурсы и уровень', () => {
     expect(deductMana(restored, restored.skills[0].manaCost ?? 0)?.resources.mana.current).toBe(state.resources.mana.current - 2)
   })
 
+  it('сохраняет стоимость костей хитов умения и запрещает расход сверх остатка', () => {
+    const state = base()
+    state.skills[0] = { ...state.skills[0], hitDiceCost: 1 }
+    state.resources.hitDice = { current: 1, max: 3 }
+    const restored = restoreCharacter(serializeCharacter(state))
+    expect(restored.skills[0].hitDiceCost).toBe(1)
+    expect(deductHitDice(restored, 1)?.resources.hitDice.current).toBe(0)
+    expect(deductHitDice(restored, 2)).toBeNull()
+    expect(deductHitDice(restored, 1.5)).toBeNull()
+  })
+
+  it('сохраняет стоимость HP умения при экспорте и списывает только текущие HP', () => {
+    const state = base()
+    state.skills[0] = { ...state.skills[0], hpCost: 10 }
+    state.resources.hp = { current: 10, max: 80, temporary: 5 }
+    const restored = restoreCharacter(serializeCharacter(state))
+    expect(restored.skills[0].hpCost).toBe(10)
+    expect(deductHp(restored, 10)?.resources.hp).toEqual({ current: 0, max: 80, temporary: 5 })
+    expect(migrateCharacter(base()).skills[0].hpCost).toBeUndefined()
+  })
+
+  it('не списывает HP при недостатке или некорректной стоимости', () => {
+    const state = base()
+    expect(deductHp(state, 82)).toBeNull()
+    expect(deductHp(state, -1)).toBeNull()
+    expect(deductHp(state, 1.5)).toBeNull()
+    expect(deductHp(state, Number.NaN)).toBeNull()
+  })
+
+  it('списывает совместную стоимость всех ресурсов атомарно и отменяет одним действием', () => {
+    const state = base()
+    state.skills[0] = { ...state.skills[0], manaCost: 30, hpCost: 10, superiorityCost: 1, hitDiceCost: 1, costMode: 'combined' }
+    state.resources.mana.current = 30
+    state.resources.hp.current = 20
+    state.resources.superiority.current = 1
+    state.resources.hitDice = { current: 1, max: 2 }
+    const restored = restoreCharacter(serializeCharacter(state))
+    expect(restored.skills[0].costMode).toBe('combined')
+    const spent = deductSkillCosts(restored, restored.skills[0])!
+    expect(spent.resources).toMatchObject({ mana: { current: 0 }, hp: { current: 10 }, superiority: { current: 0 }, hitDice: { current: 0 } })
+    expect(undoResource(spent).resources).toEqual(restored.resources)
+
+    const insufficient = { ...restored, resources: { ...restored.resources, hitDice: { current: 0, max: 2 } } }
+    expect(deductSkillCosts(insufficient, restored.skills[0])).toBeNull()
+    expect(insufficient.resources.mana.current).toBe(30)
+    expect(insufficient.resources.superiority.current).toBe(1)
+    expect(migrateCharacter(base()).skills[0].costMode).toBeUndefined()
+  })
+
   it('сохраняет подготовку заклинаний и поддерживает старый лист', () => {
     const state = base()
     state.spells[0] = { ...state.spells[0], prepared: false, requiresPreparation: false, runic: true, runeAction: 'Создание', runeTrigger: 'При касании', attackAdjustment: '+2', saveDcAdjustment: '-1', spellType: 'Воплощение', area: '15 футов', saveCheck: 'Ловкость', additionalEffect: 'Падение' }
@@ -171,6 +243,18 @@ describe('ресурсы и уровень', () => {
     expect(restoreCharacter(serializeCharacter(state)).spells[0].requiresPreparation).toBe(false)
     expect(restoreCharacter(serializeCharacter(state)).spells[0]).toMatchObject({ runic: true, runeAction: 'Создание', runeTrigger: 'При касании', attackAdjustment: '+2', saveDcAdjustment: '-1', spellType: 'Воплощение', area: '15 футов', saveCheck: 'Ловкость', additionalEffect: 'Падение' })
     expect(migrateCharacter({ ...state, spells: [{ ...state.spells[0], prepared: undefined }] }).spells[0].prepared).toBeUndefined()
+  })
+
+  it('сохраняет именованные варианты стоимости маны и принимает старые заклинания', () => {
+    const state = base()
+    state.spells[0] = { ...state.spells[0], manaCost: 30, manaCostOptions: [{ label: 'Бонусное действие', cost: 30 }, { label: 'Реакция', cost: 45 }], additionalCostNote: '3d4 самоурона при создании' }
+    expect(restoreCharacter(serializeCharacter(state)).spells[0].manaCostOptions).toEqual(state.spells[0].manaCostOptions)
+    expect(restoreCharacter(serializeCharacter(state)).spells[0].additionalCostNote).toBe('3d4 самоурона при создании')
+    const oldSpell = { ...base().spells[0] }
+    delete oldSpell.manaCostOptions
+    const migratedOldSpell = migrateCharacter({ ...base(), spells: [oldSpell] }).spells[0]
+    expect(migratedOldSpell.manaCostOptions).toBeUndefined()
+    expect(migratedOldSpell.additionalCostNote).toBeUndefined()
   })
 
   it('переносит дополнительные ресурсы и безопасно открывает старые листы', () => {
@@ -217,7 +301,7 @@ describe('ресурсы и уровень', () => {
       1370, 1530, 1700, 1880, 2070, 2270, 2480, 2700, 2930, 3170,
     ])
     expect(thresholdForLevel(21)).toBeUndefined()
-    expect(thresholdForLevel(25)).toBeUndefined()
+    expect(levelUp({ ...base(), level: 21, experience: 9999 }).level).toBe(21)
   })
 
   it('хранит редактируемый тип кости превосходства в ресурсе', () => {
@@ -240,7 +324,7 @@ describe('ресурсы и уровень', () => {
     expect(setResourceMaximum(changed, 'hp', 60).resources.hp).toEqual({ current: 60, max: 60, temporary: 15 })
   })
 
-  it('не повышает уровень без опубликованного порога', () => {
+  it('останавливает автоповышение после последнего опубликованного порога', () => {
     const state = { ...base(), level: 20, experience: 3170 }
     const maximum = levelUp(state)
     expect(maximum.level).toBe(21)
@@ -370,6 +454,17 @@ describe('кубики и миграция', () => {
     expect(migrated.characteristics[0].skills[0]).toMatchObject({ name: 'Ловкость рук', bonus: '' })
   })
 
+  it('сохраняет пользовательские навыки проверки и принимает старые строки навыков', () => {
+    const state = base()
+    const wisdom = state.characteristics.find((entry) => entry.name === 'Мудрость')!
+    wisdom.skills.push({ id: 'custom-orientation', name: 'Ориентация', bonus: '', proficiencyRank: 1, custom: true })
+    const restored = restoreCharacter(serializeCharacter(state))
+    expect(restored.characteristics.find((entry) => entry.name === 'Мудрость')?.skills.at(-1)).toMatchObject({ name: 'Ориентация', custom: true, proficiencyRank: 1 })
+    const legacy = migrateCharacter({ characteristics: [{ id: 'Ловкость', name: 'Ловкость', score: '14', check: '', save: '', skills: [{ id: 'old-skill', name: 'Акробатика', bonus: '', proficiencyRank: 0 }] }] })
+    expect(legacy.characteristics[0].skills).toMatchObject([{ name: 'Акробатика', proficiencyRank: 0 }])
+    expect(legacy.characteristics[0].skills[0]).not.toHaveProperty('custom')
+  })
+
   it('сохраняет уже созданные заметки, их теги и imageId при миграции', () => {
     const notes = [{ id: 'keep', title: 'Карта', body: 'Подземелье', tags: ['локация'], imageId: 'map-image', createdAt: '2026-07-20T12:00:00.000Z', updatedAt: '2026-07-21T12:00:00.000Z' }]
     const migrated = migrateCharacter({ notes })
@@ -390,19 +485,23 @@ describe('кубики и миграция', () => {
     expect(migrated.extras).toMatchObject({ retiredCurrencies: { EP: 7 } })
   })
 
-  it('сохраняет намеренно очищенные коллекции и объединяет старые поля класса', () => {
+  it('сохраняет способности и предысторию, перенося старое поле класса только при необходимости', () => {
     const migrated = migrateCharacter({
-      profile: { className: 'Следопыт', background: 'Странник' },
+      profile: { className: 'Следопыт', background: 'Странник', specialAbilities: 'Постоянная способность' },
       languages: [],
       proficiencies: [],
       elements: [],
     })
+    expect(migrated.profile.background).toBe('Странник')
+    expect(migrated.profile.specialAbilities).toBe('Постоянная способность')
     expect(migrated.profile.classBackground).toBe('Следопыт · Странник')
     expect(migrated.languages).toEqual([])
     expect(migrated.proficiencies).toEqual([])
     expect(migrated.elements).toEqual([])
     expect(migrateCharacter(migrated).profile.classBackground).toBe('Следопыт · Странник')
+    expect(migrateCharacter(migrated).profile.specialAbilities).toBe('Постоянная способность')
     expect(migrateCharacter({ ...migrated, profile: { ...migrated.profile, classBackground: '', background: 'Старое значение' } }).profile.classBackground).toBe('')
+    expect(migrateCharacter({ profile: { classBackground: 'Старая предыстория' } }).profile.background).toBe('Старая предыстория')
   })
 
   it('переносит старое превышение максимума HP во временные хиты', () => {

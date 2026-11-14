@@ -3,7 +3,10 @@ import { createInitialCharacter } from './data'
 import { combatEffectSchema, migrateCombatEffects, type CombatEffect } from './combat'
 
 export const SCHEMA_VERSION = 9
-export const experienceThresholds = [320, 380, 450, 530, 620, 720, 830, 950, 1080, 1220, 1370, 1530, 1700, 1880, 2070, 2270, 2480, 2700, 2930, 3170]
+export const experienceThresholds = [
+  320, 380, 450, 530, 620, 720, 830, 950, 1080, 1220,
+  1370, 1530, 1700, 1880, 2070, 2270, 2480, 2700, 2930, 3170,
+]
 
 export type ResourceKey = 'hp' | 'mana' | 'superiority' | 'patronMana' | 'hitDice'
 export type Resource = { current: number; max: number; temporary?: number; dieType?: string }
@@ -12,11 +15,13 @@ export type ThemeMode = 'dark' | 'light'
 export type AccentColor = 'red' | 'blue' | 'cyan' | 'green' | 'purple' | 'pink' | 'yellow'
 export type NamedEntry = { id: string; name: string; imageId?: string }
 export type SkillProficiencyRank = 0 | 1 | 2
-export type CharacterSkill = { id: string; name: string; bonus: string; proficiencyRank: SkillProficiencyRank }
+export type CharacterSkill = { id: string; name: string; bonus: string; proficiencyRank: SkillProficiencyRank; custom?: boolean }
 export type Characteristic = { id: string; name: string; score: string; check: string; save: string; skills: CharacterSkill[] }
-export type Spell = { id: string; name: string; imageId?: string; elements: string[]; characteristic: string; components: string; castingTime: string; target?: string; range: string; area?: string; spellType?: string; saveCheck?: string; additionalEffect?: string; attackAdjustment?: string; saveDcAdjustment?: string; runic?: boolean; preparedRuneCount?: number; runeComplexity?: string; runeAction?: string; runeTrigger?: string; duration: string; manaCost: number | null; prepared?: boolean; requiresPreparation?: boolean; damageOrHealing: string; damage?: string; healing?: string; difficulty: string; level: string; summary: string; description: string; effects: string; restrictions: string; tags: string[]; requiresConcentration: boolean; actionType: string }
+export type SpellManaCostOption = { label: string; cost: number }
+export type Spell = { id: string; name: string; imageId?: string; elements: string[]; characteristic: string; components: string; castingTime: string; target?: string; range: string; area?: string; spellType?: string; saveCheck?: string; additionalEffect?: string; attackAdjustment?: string; saveDcAdjustment?: string; runic?: boolean; preparedRuneCount?: number; runeComplexity?: string; runeAction?: string; runeTrigger?: string; duration: string; manaCost: number | null; manaCostOptions?: SpellManaCostOption[]; additionalCostNote?: string; prepared?: boolean; requiresPreparation?: boolean; damageOrHealing: string; damage?: string; healing?: string; difficulty: string; level: string; summary: string; description: string; effects: string; restrictions: string; tags: string[]; requiresConcentration: boolean; actionType: string }
 export type SkillUses = { current: number; max: number; recovery: string }
-export type Skill = { id: string; name: string; imageId?: string; difficulty: string; actionType: string; summary: string; mechanics: string; condition: string; requirement: string; characteristic?: string; progression?: string; manaCost?: number | null; superiorityCost?: number | null; uses?: SkillUses; status: 'active' | 'passive' | 'reaction'; tags: string[] }
+export type SkillCostMode = 'independent' | 'choose' | 'combined'
+export type Skill = { id: string; name: string; imageId?: string; difficulty: string; actionType: string; summary: string; mechanics: string; condition: string; requirement: string; characteristic?: string; progression?: string; manaCost?: number | null; superiorityCost?: number | null; hitDiceCost?: number; hpCost?: number; costMode?: SkillCostMode; uses?: SkillUses; status: 'active' | 'passive' | 'reaction'; tags: string[] }
 export type Item = { id: string; name: string; imageId?: string; category: string; quantity: string; damage: string; damageType: string; range: string; properties: string; cost: string; description: string; equipped: boolean; note: string }
 export type CurrencyKey = 'PP' | 'GP' | 'SP' | 'CP'
 export type DiceRoll = { id: string; dice: Record<string, number>; results: Record<string, number[]>; total: number; createdAt: string }
@@ -35,7 +40,7 @@ export type CharacterState = {
   notes: Note[]
   combatEffects: CombatEffect[]
   settings: { levelUpBehavior: 'carry' | 'reset'; allowNegativeMana: boolean; themeMode: ThemeMode; accentColor: AccentColor }
-  recentAction?: { key: ResourceKey; previous: number; label: string; previousPatronMana?: number }
+  recentAction?: { key: ResourceKey; previous: number; label: string; previousPatronMana?: number; previousResources?: Record<ResourceKey, Resource> }
   characteristics: Characteristic[]
   languages: NamedEntry[]
   proficiencies: NamedEntry[]
@@ -51,11 +56,12 @@ export type CharacterState = {
 const resourceSchema = z.object({ current: z.number(), max: z.number(), temporary: z.number().optional() })
 const superiorityResourceSchema = resourceSchema.extend({ dieType: z.string() })
 const entrySchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional() })
-const skillBonusSchema = z.object({ id: z.string(), name: z.string(), bonus: z.string(), proficiencyRank: z.union([z.literal(0), z.literal(1), z.literal(2)]) })
+const skillBonusSchema = z.object({ id: z.string(), name: z.string(), bonus: z.string(), proficiencyRank: z.union([z.literal(0), z.literal(1), z.literal(2)]), custom: z.boolean().optional() })
 const characteristicSchema = z.object({ id: z.string(), name: z.string(), score: z.string(), check: z.string(), save: z.string(), skills: z.array(skillBonusSchema) })
-const spellSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), elements: z.array(z.string()), characteristic: z.string(), components: z.string(), castingTime: z.string(), target: z.string().optional(), range: z.string(), area: z.string().optional(), spellType: z.string().optional(), saveCheck: z.string().optional(), additionalEffect: z.string().optional(), attackAdjustment: z.string().optional(), saveDcAdjustment: z.string().optional(), runic: z.boolean().optional(), preparedRuneCount: z.number().int().min(0).optional(), runeComplexity: z.string().optional(), runeAction: z.string().optional(), runeTrigger: z.string().optional(), duration: z.string(), manaCost: z.number().nullable(), prepared: z.boolean().optional(), requiresPreparation: z.boolean().optional(), damageOrHealing: z.string(), damage: z.string().optional(), healing: z.string().optional(), difficulty: z.string(), level: z.string(), summary: z.string(), description: z.string(), effects: z.string(), restrictions: z.string(), tags: z.array(z.string()), requiresConcentration: z.boolean(), actionType: z.string() })
+const spellManaCostOptionSchema = z.object({ label: z.string().trim().min(1), cost: z.number().finite().min(0) })
+const spellSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), elements: z.array(z.string()), characteristic: z.string(), components: z.string(), castingTime: z.string(), target: z.string().optional(), range: z.string(), area: z.string().optional(), spellType: z.string().optional(), saveCheck: z.string().optional(), additionalEffect: z.string().optional(), attackAdjustment: z.string().optional(), saveDcAdjustment: z.string().optional(), runic: z.boolean().optional(), preparedRuneCount: z.number().int().min(0).optional(), runeComplexity: z.string().optional(), runeAction: z.string().optional(), runeTrigger: z.string().optional(), duration: z.string(), manaCost: z.number().nullable(), manaCostOptions: z.array(spellManaCostOptionSchema).min(1).optional(), additionalCostNote: z.string().optional(), prepared: z.boolean().optional(), requiresPreparation: z.boolean().optional(), damageOrHealing: z.string(), damage: z.string().optional(), healing: z.string().optional(), difficulty: z.string(), level: z.string(), summary: z.string(), description: z.string(), effects: z.string(), restrictions: z.string(), tags: z.array(z.string()), requiresConcentration: z.boolean(), actionType: z.string() })
 const skillUsesSchema = z.object({ current: z.number().int().min(0), max: z.number().int().min(0), recovery: z.string() }).refine((uses) => uses.current <= uses.max, { message: 'Остаток не может превышать максимум применений' })
-const skillSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), difficulty: z.string(), actionType: z.string(), summary: z.string(), mechanics: z.string(), condition: z.string(), requirement: z.string(), characteristic: z.string().optional(), progression: z.string().optional(), manaCost: z.number().finite().min(0).nullable().optional(), superiorityCost: z.number().int().min(0).nullable().optional(), uses: skillUsesSchema.optional(), status: z.enum(['active', 'passive', 'reaction']), tags: z.array(z.string()) })
+const skillSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), difficulty: z.string(), actionType: z.string(), summary: z.string(), mechanics: z.string(), condition: z.string(), requirement: z.string(), characteristic: z.string().optional(), progression: z.string().optional(), manaCost: z.number().finite().min(0).nullable().optional(), superiorityCost: z.number().int().min(0).nullable().optional(), hitDiceCost: z.number().int().min(0).optional(), hpCost: z.number().int().min(0).optional(), costMode: z.enum(['independent', 'choose', 'combined']).optional(), uses: skillUsesSchema.optional(), status: z.enum(['active', 'passive', 'reaction']), tags: z.array(z.string()) })
 const itemSchema = z.object({ id: z.string(), name: z.string(), imageId: z.string().optional(), category: z.string(), quantity: z.string(), damage: z.string(), damageType: z.string(), range: z.string(), properties: z.string(), cost: z.string(), description: z.string(), equipped: z.boolean(), note: z.string() })
 const noteSchema = z.object({ id: z.string(), title: z.string(), body: z.string(), tags: z.array(z.string()), imageId: z.string().optional(), createdAt: z.string(), updatedAt: z.string() })
 
@@ -72,7 +78,7 @@ export const characterSchema = z.object({
   notes: z.array(noteSchema),
   combatEffects: z.array(combatEffectSchema),
   settings: z.object({ levelUpBehavior: z.enum(['carry', 'reset']), allowNegativeMana: z.boolean(), themeMode: z.enum(['dark', 'light']), accentColor: z.enum(['red', 'blue', 'cyan', 'green', 'purple', 'pink', 'yellow']) }),
-  recentAction: z.object({ key: z.enum(['hp', 'mana', 'superiority', 'patronMana', 'hitDice']), previous: z.number(), label: z.string(), previousPatronMana: z.number().optional() }).optional(),
+  recentAction: z.object({ key: z.enum(['hp', 'mana', 'superiority', 'patronMana', 'hitDice']), previous: z.number(), label: z.string(), previousPatronMana: z.number().optional(), previousResources: z.object({ hp: resourceSchema, mana: resourceSchema, superiority: superiorityResourceSchema, patronMana: resourceSchema, hitDice: resourceSchema }).optional() }).optional(),
   characteristics: z.array(characteristicSchema),
   languages: z.array(entrySchema),
   proficiencies: z.array(entrySchema),
@@ -98,7 +104,7 @@ const parseRuleNumber = (value: string | number | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const proficiencyMilestones = [1, 3, 8, 12, 15]
+const proficiencyMilestones = [1, 4, 7, 10, 13, 18]
 
 export function proficiencyBonusForLevel(level: number): number | null {
   if (!Number.isInteger(level) || level < 1 || level > 20) return null
@@ -113,9 +119,8 @@ export function effectiveProficiency(level: number, savedValue: string | undefin
 
 export function characteristicModifier(score: string | number | undefined): number | null {
   const parsed = parseRuleNumber(score)
-  if (parsed === null) return null
-  // Some abilities explicitly raise a characteristic above the normal limit of 30.
-  const bounded = Math.max(0, Math.trunc(parsed))
+  if (parsed === null || parsed < 0 || parsed > 30) return null
+  const bounded = Math.trunc(parsed)
   return Math.floor((bounded - 10) / 2)
 }
 
@@ -128,6 +133,13 @@ export function calculateSkillBonus(score: string | number | undefined, proficie
   const modifier = characteristicModifier(score)
   if (modifier === null) return null
   return modifier + (parseRuleNumber(proficiency) ?? 0) * rank
+}
+
+export function automaticSavingThrow(characteristic: Pick<Characteristic, 'name' | 'score'>, mainCharacteristic: string | undefined, level: number, proficiency: string | number | null | undefined): number | null {
+  const modifier = characteristicModifier(characteristic.score)
+  if (modifier === null) return null
+  const hasMastery = Number.isInteger(level) && level >= 4 && characteristic.name === mainCharacteristic
+  return modifier + (hasMastery && proficiency != null ? (parseRuleNumber(proficiency) ?? 0) : 0)
 }
 
 export function passiveSenseValue(name: string, characteristics: Characteristic[], proficiency: string | number): number | null {
@@ -168,7 +180,7 @@ export function nextSkillProficiencyRank(rank: SkillProficiencyRank): SkillProfi
 
 export function levelUp(state: CharacterState): CharacterState {
   const threshold = thresholdForLevel(state.level)
-  if (threshold === undefined || state.experience < threshold || state.level >= 25) return state
+  if (threshold === undefined || state.experience < threshold) return state
   return {
     ...state,
     level: state.level + 1,
@@ -264,6 +276,60 @@ export function deductSuperiority(state: CharacterState, cost: number): Characte
   return changeResource(state, 'superiority', state.resources.superiority.current - cost, `Расход превосходства: −${cost}`)
 }
 
+export function deductHitDice(state: CharacterState, cost: number): CharacterState | null {
+  if (!Number.isSafeInteger(cost) || cost < 0 || cost > state.resources.hitDice.current) return null
+  return changeResource(state, 'hitDice', state.resources.hitDice.current - cost, `Расход костей хитов: −${cost}`)
+}
+
+export function deductHp(state: CharacterState, cost: number): CharacterState | null {
+  if (!Number.isSafeInteger(cost) || cost < 0 || cost > state.resources.hp.current) return null
+  return changeResource(state, 'hp', state.resources.hp.current - cost, `Расход HP: −${cost}`)
+}
+
+export function deductSkillCosts(state: CharacterState, skill: Skill): CharacterState | null {
+  if (skill.costMode !== 'combined') return null
+  const costs = [
+    ['mana', skill.manaCost],
+    ['hp', skill.hpCost],
+    ['superiority', skill.superiorityCost],
+    ['hitDice', skill.hitDiceCost],
+  ] as const
+  const definedCosts = costs.filter((entry): entry is readonly [typeof costs[number][0], number] => entry[1] !== null && entry[1] !== undefined)
+  if (definedCosts.length === 0 || !definedCosts.some(([, cost]) => cost > 0)) return null
+  if (definedCosts.some(([key, cost]) => !Number.isFinite(cost) || cost < 0 || (key !== 'mana' && !Number.isSafeInteger(cost)))) return null
+
+  const amount = (key: typeof costs[number][0]) => definedCosts.find(([entryKey]) => entryKey === key)?.[1] ?? 0
+  const manaCost = amount('mana')
+  if (!state.settings.allowNegativeMana && manaCost > Math.max(0, state.resources.mana.current) + state.resources.patronMana.current) return null
+  if (amount('hp') > state.resources.hp.current || amount('superiority') > state.resources.superiority.current || amount('hitDice') > state.resources.hitDice.current) return null
+
+  let next = state
+  if (manaCost > 0) {
+    const paid = deductMana(next, manaCost)
+    if (!paid) return null
+    next = paid
+  }
+  if (amount('hp') > 0) {
+    const paid = deductHp(next, amount('hp'))
+    if (!paid) return null
+    next = paid
+  }
+  if (amount('superiority') > 0) {
+    const paid = deductSuperiority(next, amount('superiority'))
+    if (!paid) return null
+    next = paid
+  }
+  if (amount('hitDice') > 0) {
+    const paid = deductHitDice(next, amount('hitDice'))
+    if (!paid) return null
+    next = paid
+  }
+  if (next === state) return null
+
+  const labels = definedCosts.filter(([, cost]) => cost > 0).map(([key, cost]) => `${cost} ${({ mana: 'маны', hp: 'HP', superiority: 'превосходства', hitDice: 'костей хитов' })[key]}`).join(' + ')
+  return { ...next, recentAction: { key: 'hp', previous: state.resources.hp.current, previousPatronMana: state.resources.patronMana.current, previousResources: state.resources, label: `Совместная оплата «${skill.name}»: ${labels}` } }
+}
+
 export function adjustSkillUses(state: CharacterState, skillId: string, delta: number): CharacterState | null {
   if (!Number.isSafeInteger(delta)) return null
   const skill = state.skills.find((entry) => entry.id === skillId)
@@ -284,6 +350,7 @@ export function adjustPreparedRunes(state: CharacterState, spellId: string, delt
 
 export function undoResource(state: CharacterState): CharacterState {
   if (!state.recentAction) return state
+  if (state.recentAction.previousResources) return { ...state, resources: state.recentAction.previousResources, recentAction: undefined }
   return {
     ...state,
     resources: {
@@ -390,6 +457,7 @@ const migrateCharacteristics = (value: unknown, fallback: Characteristic[], prof
         name: hasBrokenContinuation ? defaultSkill.name : rawName,
         bonus: hasExplicitRank ? rawBonus : '',
         proficiencyRank: explicitRank === 1 || explicitRank === 2 ? explicitRank : explicitRank === 0 ? 0 : inferredRank,
+        ...(rawSkill.custom === true ? { custom: true } : {}),
       }
     })
     const score = asString(rawCharacteristic.score)
@@ -424,6 +492,9 @@ export function migrateCharacter(input: unknown): CharacterState {
   const explicitClassBackground = typeof oldProfile.classBackground === 'string' ? oldProfile.classBackground.trim() : ''
   const legacyClassBackground = [...new Set([oldProfile.className, oldProfile.background].filter((value): value is string => typeof value === 'string' && Boolean(value.trim())).map((value) => value.trim()))].join(' · ')
   profile.classBackground = hasExplicitClassBackground ? explicitClassBackground : legacyClassBackground || (typeof oldProfile.profession === 'string' ? oldProfile.profession.trim() : '') || defaults.profile.classBackground || ''
+  profile.background = typeof oldProfile.background === 'string'
+    ? oldProfile.background.trim()
+    : explicitClassBackground || (typeof oldProfile.className === 'string' ? oldProfile.className.trim() : '') || defaults.profile.background || ''
 
   const sourceResources = isRecord(input.resources) ? input.resources : {}
   const resource = (key: ResourceKey): Resource => {

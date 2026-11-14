@@ -94,7 +94,21 @@ describe('игровые представления листа', () => {
     expect(screen.getByText('Личная заметка')).toBeInTheDocument()
   })
 
-  it('показывает поля исходного листа: основную характеристику, размер и предысторию', async () => {
+  it('не подставляет неподтверждённые правила отдыха и не меняет ресурсы автоматически', async () => {
+    const initial = createInitialCharacter()
+    initial.resources.hitDice = { current: 2, max: 4 }
+    initial.resources.patronMana = { current: 1, max: 2 }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+
+    expect(await screen.findByText('Учитывайте восстановление костей хитов по правилам вашего персонажа. Запас меняется вручную.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Правила отдыха' })).not.toBeInTheDocument()
+    expect(screen.getByText('«Божественный резерв» восстанавливает этот запас после длительного отдыха; счётчик меняется вручную.')).toBeInTheDocument()
+    expect(useCharacterStore.getState().resources.hitDice).toEqual({ current: 2, max: 4 })
+    expect(useCharacterStore.getState().resources.patronMana).toEqual({ current: 1, max: 2 })
+  })
+
+  it('показывает поля исходного листа, включая отдельно заполняемые способности', async () => {
     const initial = createInitialCharacter()
     initial.profile.size = 'Средний'
     initial.profile.background = 'Чужеземец'
@@ -104,9 +118,40 @@ describe('игровые представления листа', () => {
     expect((await screen.findByText('Основная характеристика')).parentElement).toHaveTextContent(initial.profile.mainCharacteristic)
     expect(screen.getByText('Размер').parentElement).toHaveTextContent('Средний')
     expect(screen.getByText('Предыстория').parentElement).toHaveTextContent('Чужеземец')
+    expect(screen.getByRole('group', { name: 'Способности' })).toBeInTheDocument()
+    expect(screen.queryByText('Класс')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Основная характеристика' }), { target: { value: 'Сила' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Способности' }), { target: { value: 'Ночное зрение' } })
     expect(useCharacterStore.getState().profile.mainCharacteristic).toBe('Сила')
+    expect(useCharacterStore.getState().profile.specialAbilities).toBe('Ночное зрение')
+  })
+
+  it('позволяет отдельно заполнить перспективу персонажа из листа', async () => {
+    const initial = createInitialCharacter()
+    useCharacterStore.setState({ ...initial, editing: true })
+    render(<App />)
+    navigate('Персонаж')
+    const perspective = await screen.findByRole('textbox', { name: 'Перспектива' })
+    fireEvent.change(perspective, { target: { value: 'Размашистый удар' } })
+    expect(useCharacterStore.getState().profile.perspective).toBe('Размашистый удар')
+  })
+
+  it('показывает ману покровителя только по выбору и не стирает скрытый ресурс', async () => {
+    const initial = createInitialCharacter()
+    initial.resources.patronMana = { current: 4, max: 10 }
+    initial.profile.trackPatronMana = 'false'
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+
+    expect(screen.queryByText('Мана покровителя: 4 / 10')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать' }))
+    const toggle = screen.getByRole('checkbox', { name: 'Отслеживать ману покровителя' })
+    fireEvent.click(toggle)
+    expect(screen.getByText('Мана покровителя: 4 / 10')).toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(screen.queryByText('Мана покровителя: 4 / 10')).not.toBeInTheDocument()
+    expect(useCharacterStore.getState().resources.patronMana).toEqual({ current: 4, max: 10 })
   })
 
   it('сохраняет особые чувства и защиты и показывает их в бою', async () => {
@@ -199,9 +244,81 @@ describe('игровые представления листа', () => {
     expect(useCharacterStore.getState().resources.superiority.current).toBe(0)
   })
 
+  it('показывает и списывает кости хитов для умения из быстрого доступа', async () => {
+    const initial = createInitialCharacter()
+    initial.skills[0] = { ...initial.skills[0], hitDiceCost: 1 }
+    initial.resources.hitDice = { current: 1, max: 2 }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
+    const button = screen.getByRole('button', { name: 'Списать кости хитов (1)' })
+    fireEvent.click(button)
+    expect(useCharacterStore.getState().resources.hitDice.current).toBe(0)
+    fireEvent.click(button)
+    expect(screen.getByText('Недостаточно костей хитов: 0.')).toBeInTheDocument()
+    expect(useCharacterStore.getState().resources.hitDice.current).toBe(0)
+  })
+
+  it('позволяет задать и списать HP-стоимость умения', async () => {
+    render(<App />)
+    navigate('Умения')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить навык' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Жизненная сила' } })
+    fireEvent.change(screen.getByLabelText('Стоимость HP (необязательно)'), { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
+    expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Жизненная сила')?.hpCost).toBe(10)
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    fireEvent.click(within(quick).getByRole('button', { name: /Жизненная сила/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Списать HP (10)' }))
+    expect(useCharacterStore.getState().resources.hp.current).toBe(71)
+  })
+
+  it('совместно списывает ресурсы умения и отменяет их одной кнопкой', async () => {
+    const initial = createInitialCharacter()
+    initial.resources.mana.current = 30
+    initial.resources.superiority.current = 1
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Умения')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить навык' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Совместный приём' } })
+    fireEvent.change(screen.getByLabelText('Стоимость маны (необязательно)'), { target: { value: '30' } })
+    fireEvent.change(screen.getByLabelText('Стоимость превосходства (необязательно)'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Связь затрат'), { target: { value: 'combined' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
+    expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Совместный приём')?.costMode).toBe('combined')
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    fireEvent.click(within(quick).getByRole('button', { name: /Совместный приём/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Оплатить вместе: 30 маны + 1 превосходства' }))
+    expect(useCharacterStore.getState().resources.mana.current).toBe(0)
+    expect(useCharacterStore.getState().resources.superiority.current).toBe(0)
+    fireEvent.click(screen.getByRole('button', { name: /Отменить: Совместная оплата/ }))
+    expect(useCharacterStore.getState().resources).toEqual(initial.resources)
+  })
+
+  it('позволяет выбрать ровно один ресурс для альтернативной оплаты умения', async () => {
+    const initial = createInitialCharacter()
+    initial.skills[0] = { ...initial.skills[0], manaCost: 30, superiorityCost: 1, costMode: 'choose' }
+    initial.resources.mana.current = 30
+    initial.resources.superiority.current = 1
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
+    fireEvent.change(screen.getByLabelText('Вариант оплаты'), { target: { value: 'superiority' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Оплатить выбранный вариант' }))
+    expect(useCharacterStore.getState().resources.superiority.current).toBe(0)
+    expect(useCharacterStore.getState().resources.mana.current).toBe(30)
+  })
+
   it('сохраняет вручную заданную стоимость превосходства навыка', async () => {
     render(<App />)
-    navigate('Навыки +')
+    navigate('Умения')
     fireEvent.click(await screen.findByRole('button', { name: 'Добавить навык' }))
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Боевой приём' } })
     fireEvent.change(screen.getByLabelText('Стоимость превосходства (необязательно)'), { target: { value: '2' } })
@@ -209,9 +326,19 @@ describe('игровые представления листа', () => {
     expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Боевой приём')?.superiorityCost).toBe(2)
   })
 
+  it('позволяет задать стоимость костей хитов для нового навыка', async () => {
+    render(<App />)
+    navigate('Умения')
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить навык' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Взлом замков' } })
+    fireEvent.change(screen.getByLabelText('Стоимость костей хитов (необязательно)'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
+    expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Взлом замков')?.hitDiceCost).toBe(1)
+  })
+
   it('создаёт и учитывает ограниченные применения умения', async () => {
     render(<App />)
-    navigate('Навыки +')
+    navigate('Умения')
     fireEvent.click(await screen.findByRole('button', { name: 'Добавить навык' }))
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Первая помощь' } })
     fireEvent.change(screen.getByLabelText('Лимит применений (необязательно)'), { target: { value: '1' } })
@@ -254,6 +381,45 @@ describe('игровые представления листа', () => {
     expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - (initial.spells[0].manaCost ?? 0))
   })
 
+  it('редактирует варианты оплаты заклинания и списывает выбранную стоимость', async () => {
+    const initial = createInitialCharacter()
+    initial.spells = [{ ...initial.spells[0], id: 'variable-cost', name: 'Цена выбора', manaCost: 30, manaCostOptions: undefined, requiresPreparation: false }]
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Заклинания')
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать Цена выбора' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить вариант' }))
+    fireEvent.change(screen.getByLabelText('Название варианта 1'), { target: { value: 'Бонусное действие' } })
+    fireEvent.change(screen.getByLabelText('Название варианта 2'), { target: { value: 'Реакция' } })
+    fireEvent.change(screen.getByLabelText('Стоимость маны 2'), { target: { value: '45' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить заклинание' }))
+
+    const reaction = await screen.findByRole('button', { name: 'Использовать Цена выбора: Реакция: списать 45 маны' })
+    fireEvent.click(reaction)
+    expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - 45)
+    expect(await screen.findByText('Списано 45 маны (Реакция): «Цена выбора».')).toBeInTheDocument()
+  })
+
+  it('сохраняет и показывает дополнительные ручные затраты заклинания', async () => {
+    const initial = createInitialCharacter()
+    initial.spells = [{ ...initial.spells[0], id: 'blood-cost', name: 'Кровавое копьё', additionalCostNote: '3d4 урона себе при формировании' }]
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Заклинания')
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать Кровавое копьё' }))
+    fireEvent.change(screen.getByLabelText('Дополнительные затраты и условия оплаты (вручную)'), { target: { value: '3d4 самоурона, списать вручную' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить заклинание' }))
+    expect(useCharacterStore.getState().spells[0].additionalCostNote).toBe('3d4 самоурона, списать вручную')
+
+    fireEvent.click(screen.getByText('Кровавое копьё', { selector: 'h3' }).closest('button')!)
+    expect(screen.getByText('Дополнительные затраты и условия оплаты (вручную)')).toBeInTheDocument()
+    expect(screen.getByText('3d4 самоурона, списать вручную')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть' }))
+    navigate('Бой')
+    const quick = await screen.findByRole('region', { name: 'Заклинания: быстрый доступ' })
+    expect(within(quick).getByText(/Дополнительные затраты вручную: 3d4 самоурона, списать вручную/)).toBeInTheDocument()
+  })
+
   it('создаёт и изменяет дополнительный боевой ресурс', async () => {
     render(<App />)
     navigate('Бой')
@@ -285,6 +451,21 @@ describe('игровые представления листа', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Редактировать' })[0])
     expect(screen.getByLabelText('Ловкость рук')).toBeInTheDocument()
     expect(screen.getByLabelText('Уход за животными')).toBeInTheDocument()
+  })
+
+  it('добавляет пользовательский навык к выбранной характеристике и считает владение', async () => {
+    const initial = createInitialCharacter()
+    useCharacterStore.setState({ ...initial, editing: true })
+    render(<App />)
+    navigate('Характеристики')
+    const input = await screen.findByLabelText('Новый навык для Мудрость')
+    fireEvent.change(input, { target: { value: 'Ориентация' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить навык к Мудрость' }))
+    expect(await screen.findByRole('button', { name: /Ориентация: \+5/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Ориентация: \+5/ }))
+    expect(screen.getByRole('button', { name: /Ориентация: \+8/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить пользовательский навык Ориентация' }))
+    expect(screen.queryByText('Ориентация')).not.toBeInTheDocument()
   })
 
   it('показывает подписи полей персонажа, включая профессию и мастерство/магию', async () => {
@@ -537,7 +718,7 @@ describe('игровые представления листа', () => {
     ]
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
-    navigate('Навыки +')
+    navigate('Умения')
     const search = await screen.findByLabelText('Поиск навыков')
     fireEvent.change(search, { target: { value: 'Каменная' } })
     expect(screen.getByRole('heading', { name: 'Гранитная стойка' })).toBeInTheDocument()
@@ -568,7 +749,7 @@ describe('игровые представления листа', () => {
   it('создаёт независимую копию навыка и отдельную заметку с тегом', async () => {
     render(<App />)
     const initialSkills = useCharacterStore.getState().skills.length
-    navigate('Навыки +')
+    navigate('Умения')
     fireEvent.click((await screen.findAllByRole('button', { name: /Создать копию / }))[0])
     await waitFor(() => expect(useCharacterStore.getState().skills).toHaveLength(initialSkills + 1))
     expect(useCharacterStore.getState().skills.at(-1)?.id).not.toBe(useCharacterStore.getState().skills[0].id)

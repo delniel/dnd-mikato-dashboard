@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { characteristicModifier, effectiveProficiency, spellCastingStats, type CharacterState } from './domain'
+import { automaticSavingThrow, characteristicModifier, effectiveProficiency, spellCastingStats, type CharacterState } from './domain'
 
 export const combatCategories = ['positive', 'negative', 'special'] as const
 export const combatOperations = ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'SET'] as const
@@ -169,8 +169,9 @@ export function buildCombatTargets(state: Pick<CharacterState, 'profile' | 'char
     const fields: Array<['score' | 'check' | 'save', string]> = [['score', 'Значение'], ['check', 'Проверка'], ['save', 'Спасбросок']]
     for (const [field, label] of fields) {
       const modifier = characteristicModifier(characteristic.score)
+      const automaticSave = automaticSavingThrow(characteristic, state.profile.mainCharacteristic, state.level, effectiveProficiency(state.level, state.profile.proficiency))
       const baseValue = field === 'check' || field === 'save'
-        ? parseCombatNumber(characteristic[field]) ?? modifier
+        ? parseCombatNumber(characteristic[field]) ?? (field === 'save' ? automaticSave : modifier)
         : parseCombatNumber(characteristic[field])
       if (baseValue !== null) targets.push({ id: `characteristic.${characteristic.id}.${field}`, label: `${characteristic.name}: ${label}`, group: 'ability', baseValue })
     }
@@ -236,7 +237,10 @@ export function calculateCombatState(state: Pick<CharacterState, 'profile' | 'ch
     const score = targets.find((entry) => entry.id === `characteristic.${characteristic.id}.score`)
     if (!score) return calculateCombatTarget(target, state.combatEffects)
     const effectiveScore = calculateCombatTarget(score, state.combatEffects).finalValue
-    const effectiveModifier = characteristicModifier(effectiveScore)
+    const field = target.id.endsWith('.save') ? 'save' : 'check'
+    const effectiveModifier = field === 'save'
+      ? automaticSavingThrow({ name: characteristic.name, score: String(effectiveScore) }, state.profile.mainCharacteristic, state.level, effectiveProficiency(state.level, state.profile.proficiency))
+      : characteristicModifier(effectiveScore)
     if (effectiveModifier === null || effectiveModifier === target.baseValue) return calculateCombatTarget(target, state.combatEffects)
     const result = calculateCombatTarget({ ...target, baseValue: effectiveModifier }, state.combatEffects)
     return {

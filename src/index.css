@@ -173,6 +173,11 @@ h3 { line-height: 1.2; }
 .skill-extra-bonus input:focus { border-color: var(--accent); outline: none; }
 .skill-metric.rank-1, .skill-metric.rank-2 { background: color-mix(in srgb, var(--surface-2) 88%, var(--accent) 12%); }
 .skill-metric.rank-2 { border-color: var(--accent); }
+.skill-metric.has-remove { grid-template-columns: minmax(0, 1fr) 76px 32px; }
+.skill-metric-remove { display: grid; place-items: center; border: 0; border-left: 1px solid var(--border); background: transparent; color: var(--accent); }
+.skill-metric-remove:hover, .skill-metric-remove:focus-visible { background: color-mix(in srgb, var(--surface-2) 80%, var(--accent) 20%); }
+.custom-skill-add { display: flex; gap: 8px; margin-top: 10px; }
+.custom-skill-add input { flex: 1; min-width: 0; }
 
 .page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .page-toolbar h2 { margin-bottom: 0; }
@@ -202,6 +207,13 @@ h3 { line-height: 1.2; }
 .card-actions .delete { border-color: #874044; color: #ffbcb7; }
 .card-actions .use-spell { border-color: #3d7e94; background: #132b35; color: #c8f0fb; }
 .card-actions .use-spell:hover { background: #1d4352; }
+.spell-payment-actions, .spell-payment-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.spell-payment-buttons { margin: 14px 0; }
+.spell-cost-editor { grid-column: 1 / -1; display: grid; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
+.spell-cost-editor .section-title { align-items: center; }
+.spell-cost-editor .section-title p { margin: 5px 0 0; }
+.spell-cost-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .65fr) auto; align-items: end; gap: 9px; }
+.spell-cost-row > button { height: 38px; }
 .detail-image { width: 100%; height: 224px; margin: 8px 0 18px; border: 1px solid #4a3a40; border-radius: 10px; }
 .lead { color: #ddd4d5; font: 16px/1.5 Georgia, serif; }
 .details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
@@ -573,6 +585,8 @@ h3 { line-height: 1.2; }
   .filters select { flex: 1; }
   .card-actions button { flex: 1; justify-content: center; }
   .action-group { width: 100%; }
+  .spell-cost-row { grid-template-columns: 1fr; }
+  .spell-cost-row > button { width: 100%; }
   .spell-facts { grid-template-columns: 1fr; }
   .currency-grid { grid-template-columns: 1fr; }
   .currency .counter.counter-steps { grid-template-columns: repeat(3, 26px) minmax(42px, 1fr) repeat(3, 26px); }

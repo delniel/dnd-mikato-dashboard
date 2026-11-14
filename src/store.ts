@@ -7,6 +7,9 @@ import {
   adjustPreparedRunes,
   convertCurrency,
   deductMana,
+  deductHp,
+  deductHitDice,
+  deductSkillCosts,
   deductSuperiority,
   levelUp,
   restoreMana,
@@ -18,6 +21,7 @@ import {
   setTemporaryHp,
   undoResource,
   type CharacterState,
+  type CharacterSkill,
   type CustomResource,
   type CurrencyKey,
   type Item,
@@ -46,7 +50,10 @@ type Store = CharacterState & {
   setTemporaryHp: (value: number) => void
   setSuperiorityDie: (dieType: string) => void
   cast: (cost: number) => boolean
+  spendHp: (cost: number) => boolean
+  spendHitDice: (cost: number) => boolean
   spendSuperiority: (cost: number) => boolean
+  spendSkillCosts: (id: string) => boolean
   recoverMana: () => boolean
   undo: () => void
   levelUp: () => void
@@ -56,6 +63,8 @@ type Store = CharacterState & {
   setCharacteristic: (id: string, field: 'score' | 'check' | 'save', value: string) => void
   cycleSkillProficiency: (characteristicId: string, skillId: string) => void
   setSkillDisplayBonus: (characteristicId: string, skillId: string, value: string) => void
+  addCharacteristicSkill: (characteristicId: string, name: string) => boolean
+  deleteCharacteristicSkill: (characteristicId: string, skillId: string) => void
   setCurrency: (key: CurrencyKey, value: number) => void
   adjustCurrency: (key: CurrencyKey, delta: number) => void
   convertCurrency: (from: CurrencyKey, to: CurrencyKey) => boolean
@@ -116,8 +125,29 @@ export const useCharacterStore = create<Store>((set, get) => ({
     set(next)
     return true
   },
+  spendHp: (cost) => {
+    const next = deductHp(get(), cost)
+    if (!next) return false
+    set(next)
+    return true
+  },
+  spendHitDice: (cost) => {
+    const next = deductHitDice(get(), cost)
+    if (!next) return false
+    set(next)
+    return true
+  },
   spendSuperiority: (cost) => {
     const next = deductSuperiority(get(), cost)
+    if (!next) return false
+    set(next)
+    return true
+  },
+  spendSkillCosts: (id) => {
+    const state = get()
+    const skill = state.skills.find((entry) => entry.id === id)
+    if (!skill) return false
+    const next = deductSkillCosts(state, skill)
     if (!next) return false
     set(next)
     return true
@@ -138,6 +168,15 @@ export const useCharacterStore = create<Store>((set, get) => ({
   setCharacteristic: (id, field, value) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === id ? { ...characteristic, [field]: value } : characteristic) })),
   cycleSkillProficiency: (characteristicId, skillId) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === characteristicId ? { ...characteristic, skills: characteristic.skills.map((skill) => skill.id === skillId ? { ...skill, proficiencyRank: ((skill.proficiencyRank + 1) % 3) as SkillProficiencyRank } : skill) } : characteristic) })),
   setSkillDisplayBonus: (characteristicId, skillId, bonus) => set((state) => ({ characteristics: state.characteristics.map((characteristic) => characteristic.id === characteristicId ? { ...characteristic, skills: characteristic.skills.map((skill) => skill.id === skillId ? { ...skill, bonus } : skill) } : characteristic) })),
+  addCharacteristicSkill: (characteristicId, name) => {
+    const trimmedName = name.trim()
+    const characteristic = get().characteristics.find((entry) => entry.id === characteristicId)
+    if (!trimmedName || !characteristic || characteristic.skills.some((skill) => skill.name.localeCompare(trimmedName, undefined, { sensitivity: 'accent' }) === 0)) return false
+    const skill: CharacterSkill = { id: crypto.randomUUID(), name: trimmedName, bonus: '', proficiencyRank: 0, custom: true }
+    set((state) => ({ characteristics: state.characteristics.map((entry) => entry.id === characteristicId ? { ...entry, skills: [...entry.skills, skill] } : entry) }))
+    return true
+  },
+  deleteCharacteristicSkill: (characteristicId, skillId) => set((state) => ({ characteristics: state.characteristics.map((entry) => entry.id === characteristicId ? { ...entry, skills: entry.skills.filter((skill) => skill.id !== skillId || !skill.custom) } : entry) })),
   setCurrency: (key, value) => set((state) => ({ currencies: { ...state.currencies, [key]: Math.max(0, Number.isFinite(value) ? value : state.currencies[key]) } })),
   adjustCurrency: (key, delta) => set((state) => ({ currencies: { ...state.currencies, [key]: Math.max(0, state.currencies[key] + delta) } })),
   convertCurrency: (from, to) => {
