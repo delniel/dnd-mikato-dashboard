@@ -19,11 +19,13 @@ import {
   setResourceMaximum,
   setSuperiorityDie,
   setTemporaryHp,
+  singleDieKey,
   undoResource,
   type CharacterState,
   type CharacterSkill,
   type CustomResource,
   type CurrencyKey,
+  type DiceRoll,
   type Item,
   type NamedEntry,
   type Note,
@@ -53,6 +55,7 @@ type Store = CharacterState & {
   spendHp: (cost: number) => boolean
   spendHitDice: (cost: number) => boolean
   spendSuperiority: (cost: number) => boolean
+  rollSuperiority: () => DiceRoll | null
   spendSkillCosts: (id: string) => boolean
   recoverMana: () => boolean
   undo: () => void
@@ -142,6 +145,16 @@ export const useCharacterStore = create<Store>((set, get) => ({
     if (!next) return false
     set(next)
     return true
+  },
+  rollSuperiority: () => {
+    const state = get()
+    const die = singleDieKey(state.resources.superiority.dieType ?? '')
+    if (!die) return null
+    const next = deductSuperiority(state, 1)
+    if (!next) return null
+    const roll = rollDice({ [die]: 1 })
+    set({ resources: next.resources, recentAction: next.recentAction, diceHistory: [roll, ...state.diceHistory].slice(0, 10) })
+    return roll
   },
   spendSkillCosts: (id) => {
     const state = get()

@@ -252,7 +252,7 @@ describe('игровые представления листа', () => {
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
     navigate('Бой')
-    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const quick = await screen.findByRole('region', { name: 'Умения: быстрый доступ' })
     fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
     fireEvent.click(screen.getByRole('button', { name: 'Использовать (2 маны)' }))
     expect(useCharacterStore.getState().resources.mana.current).toBe(initial.resources.mana.current - 2)
@@ -283,7 +283,7 @@ describe('игровые представления листа', () => {
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
     navigate('Бой')
-    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const quick = await screen.findByRole('region', { name: 'Умения: быстрый доступ' })
     fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
     const button = screen.getByRole('button', { name: 'Списать превосходство (1)' })
     fireEvent.click(button)
@@ -300,7 +300,7 @@ describe('игровые представления листа', () => {
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
     navigate('Бой')
-    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const quick = await screen.findByRole('region', { name: 'Умения: быстрый доступ' })
     fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
     const button = screen.getByRole('button', { name: 'Списать кости хитов (1)' })
     fireEvent.click(button)
@@ -319,7 +319,7 @@ describe('игровые представления листа', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
     expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Жизненная сила')?.hpCost).toBe(10)
     navigate('Бой')
-    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const quick = await screen.findByRole('region', { name: 'Умения: быстрый доступ' })
     fireEvent.click(within(quick).getByRole('button', { name: /Жизненная сила/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Списать HP (10)' }))
     expect(useCharacterStore.getState().resources.hp.current).toBe(71)
@@ -340,7 +340,7 @@ describe('игровые представления листа', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
     expect(useCharacterStore.getState().skills.find((skill) => skill.name === 'Совместный приём')?.costMode).toBe('combined')
     navigate('Бой')
-    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const quick = await screen.findByRole('region', { name: 'Умения: быстрый доступ' })
     fireEvent.click(within(quick).getByRole('button', { name: /Совместный приём/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Оплатить вместе: 30 маны + 1 превосходства' }))
     expect(useCharacterStore.getState().resources.mana.current).toBe(0)
@@ -357,7 +357,7 @@ describe('игровые представления листа', () => {
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
     navigate('Бой')
-    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const quick = await screen.findByRole('region', { name: 'Умения: быстрый доступ' })
     fireEvent.click(within(quick).getByRole('button', { name: new RegExp(initial.skills[0].name) }))
     fireEvent.change(screen.getByLabelText('Вариант оплаты'), { target: { value: 'superiority' } })
     fireEvent.click(screen.getByRole('button', { name: 'Оплатить выбранный вариант' }))
@@ -396,7 +396,7 @@ describe('игровые представления листа', () => {
     fireEvent.change(screen.getByLabelText('Когда восстанавливаются применения'), { target: { value: 'Короткий отдых' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить навык' }))
     navigate('Бой')
-    const quick = await screen.findByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const quick = await screen.findByRole('region', { name: 'Умения: быстрый доступ' })
     const entry = within(quick).getByRole('button', { name: /Первая помощь/ })
     expect(entry).toHaveTextContent('2/2 применений')
     fireEvent.click(entry)
@@ -416,6 +416,28 @@ describe('игровые представления листа', () => {
     const useButton = await screen.findByRole('button', { name: `Использовать ${initial.spells[0].name}: списать ${initial.spells[0].manaCost} маны` })
     expect(useButton).toBeDisabled()
     expect(screen.getAllByText('Не подготовлено').length).toBeGreaterThan(0)
+  })
+
+  it('отделяет способности от заклинаний и не считает их подготовленными', async () => {
+    const initial = createInitialCharacter()
+    initial.spells = [
+      { ...initial.spells[0], id: 'spell-one', name: 'Проверочное заклинание' },
+      { ...initial.spells[0], id: 'ability-one', name: 'Разделение', spellType: 'Способность', requiresPreparation: false, prepared: false, manaCost: null, elements: ['Способность'], restrictions: 'Раса: Плазмоид' },
+    ]
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Заклинания')
+    expect(await screen.findByRole('button', { name: 'Способности (1)' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Проверочное заклинание' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Способности (1)' }))
+    expect(screen.getByRole('heading', { name: 'Разделение' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Проверочное заклинание' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Подготовлено заклинаний:/)).not.toBeInTheDocument()
+    navigate('Бой')
+    const quickAbilities = await screen.findByRole('region', { name: 'Способности: быстрый доступ' })
+    const quickSpells = screen.getByRole('region', { name: 'Заклинания: быстрый доступ' })
+    expect(within(quickAbilities).getByText('Разделение')).toBeInTheDocument()
+    expect(within(quickSpells).queryByText('Разделение')).not.toBeInTheDocument()
   })
 
   it('позволяет использовать руну без обязательной подготовки', async () => {
@@ -477,7 +499,9 @@ describe('игровые представления листа', () => {
     const section = screen.getByLabelText('Название ресурса Искра').closest('section') ?? screen.getByLabelText('Название ресурса Искра').parentElement?.parentElement?.parentElement
     expect(section).toBeTruthy()
     fireEvent.change(within(section as HTMLElement).getByLabelText('Максимум'), { target: { value: '3' } })
+    expect(within(section as HTMLElement).getByLabelText('0 из 3').firstElementChild).toHaveStyle({ width: '0%' })
     fireEvent.click(within(section as HTMLElement).getByRole('button', { name: 'Искра: текущее значение: плюс 1' }))
+    expect(parseFloat((within(section as HTMLElement).getByLabelText('1 из 3').firstElementChild as HTMLElement).style.width)).toBeCloseTo(100 / 3)
     expect(useCharacterStore.getState().customResources[0]).toMatchObject({ name: 'Искра', current: 1, max: 3 })
   })
 
@@ -617,6 +641,39 @@ describe('игровые представления листа', () => {
     expect(within(target).getByRole('option', { name: 'Все характеристики: Спасбросок' })).toBeInTheDocument()
   })
 
+  it('выбирает кости хитов и превосходства, затем бросает и тратит превосходство в бою', async () => {
+    const initial = createInitialCharacter()
+    initial.resources.superiority = { current: 1, max: 3, dieType: '1d8' }
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    await screen.findByText('81 / 81')
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    const hitDie = screen.getByRole('combobox', { name: 'Кость хитов' })
+    const superiorityDie = screen.getByRole('combobox', { name: 'Кость превосходства' })
+    expect(superiorityDie).toHaveValue('1к8')
+    fireEvent.change(hitDie, { target: { value: '1к10' } })
+    expect(useCharacterStore.getState().profile.hitDie).toBe('1к10')
+    fireEvent.change(superiorityDie, { target: { value: '1к6' } })
+    expect(useCharacterStore.getState().resources.superiority.dieType).toBe('1к6')
+    navigate('Бой')
+
+    const button = await screen.findByRole('button', { name: 'Бросить кость превосходства' })
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      fireEvent.click(button)
+    } finally {
+      random.mockRestore()
+    }
+    const state = useCharacterStore.getState()
+    expect(state.resources.superiority.current).toBe(0)
+    expect(state.resources.hitDice).toEqual(initial.resources.hitDice)
+    expect(state.diceHistory[0]).toMatchObject({ dice: { d6: 1 }, total: 4 })
+    expect(screen.getByText('Выпало').parentElement).toHaveTextContent('4')
+    expect(button).toBeDisabled()
+    expect(state.rollSuperiority()).toBeNull()
+    expect(useCharacterStore.getState().diceHistory).toHaveLength(1)
+  })
+
   it('синхронизирует HP между вкладками Бой и Обзор', async () => {
     render(<App />)
     navigate('Бой')
@@ -641,7 +698,7 @@ describe('игровые представления листа', () => {
     render(<App />)
     navigate('Бой')
     const spells = await screen.findByRole('region', { name: 'Заклинания: быстрый доступ' })
-    const skills = screen.getByRole('region', { name: 'Способности и навыки: быстрый доступ' })
+    const skills = screen.getByRole('region', { name: 'Умения: быстрый доступ' })
     expect(spells).toHaveAttribute('tabindex', '0')
     expect(skills).toHaveAttribute('tabindex', '0')
     expect(within(spells).getAllByRole('button')).toHaveLength(useCharacterStore.getState().spells.length)

@@ -362,6 +362,12 @@ export function undoResource(state: CharacterState): CharacterState {
   }
 }
 
+export function singleDieKey(value: string): string | null {
+  const match = /^(?:1\s*)?[dкk]\s*([1-9]\d*)$/i.exec(value.trim())
+  const faces = Number(match?.[1])
+  return Number.isSafeInteger(faces) && faces >= 2 ? `d${faces}` : null
+}
+
 export function rollDice(selection: Record<string, number>, random = Math.random): DiceRoll {
   const results: Record<string, number[]> = {}
   let total = 0

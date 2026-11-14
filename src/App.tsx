@@ -3,7 +3,7 @@ import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronDown, Copy, Dic
 import { createJsonBackup, createLibraryBackup, materializeImportedCharacter, parseJsonBackup, restoreLibraryBackup, type BackupScope, type PreparedBackupImport } from './backup'
 import { cloneImage, loadImage, loadImages, loadLibrary, removeImages, saveImage, saveImages, saveLibrary, type ImageRecord } from './db'
 import { createBlankCharacter } from './data'
-import { automaticSavingThrow, calculateSkillBonus, characteristicModifier, effectiveProficiency, isCharacteristicScoreOutsideCurrentRange, manaRecoveryAmount, passiveSenseValue, runeComplexityMetrics, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type SkillCostMode, type Spell, type SpellManaCostOption } from './domain'
+import { automaticSavingThrow, calculateSkillBonus, characteristicModifier, effectiveProficiency, isCharacteristicScoreOutsideCurrentRange, manaRecoveryAmount, passiveSenseValue, runeComplexityMetrics, singleDieKey, thresholdForLevel, type CharacterState, type CurrencyKey, type Item, type Note, type ResourceKey, type Skill, type SkillCostMode, type Spell, type SpellManaCostOption } from './domain'
 import { calculateCombatState, calculateSpellCombatStats, combatCategories, combatCategoryLabels, combatDurationLabels, combatDurationTypes, combatGroupTargets, combatOperationLabels, combatOperationSymbols, combatOperations, describeCombatDuration, formatCombatNumber, formatSignedCombatNumber, type CombatCalculation, type CombatCategory, type CombatEffect, type CombatModifier, type CombatOperation } from './combat'
 import { addCharacter, applyLibrarySettings, characterForActivation, collectCharacterImageIds, createCharacterLibrary, createCharacterRecord, deleteCharacter, getActiveCharacter, renameCharacter, sanitizeFilename, selectCharacter as selectLibraryCharacter, syncActiveCharacter, type CharacterLibrary, type CharacterRecord } from './library'
 import { librarySnapshot, useLibraryStore } from './libraryStore'
@@ -59,6 +59,7 @@ const combatEffectSectionTitles: Record<CombatCategory, string> = {
   special: 'Особые эффекты',
 }
 const baseDice = ['d2', 'd4', 'd6', 'd8', 'd10', 'd12', 'd16', 'd20', 'd100']
+const resourceDice = baseDice.map((die) => `1к${die.slice(1)}`)
 const newId = () => crypto.randomUUID()
 const spellAvailable = (spell: Spell) => spell.runic === true || spell.requiresPreparation === false || spell.prepared !== false
 const spellPreparationLabel = (spell: Spell) => spell.runic ? 'Рунная магия' : spell.requiresPreparation === false ? 'Без подготовки' : spell.prepared === false ? 'Не подготовлено' : 'Подготовлено'
@@ -496,6 +497,12 @@ function ChoiceField({ label, value, options, onChange, editable }: { label: str
   return <label className="field-value"><span>{label}</span>{editable ? <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}><option value="">Не выбрано</option>{hasLegacyValue && <option value={value}>Сохранённое значение: {value}</option>}{options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <strong>{noValue(value)}</strong>}</label>
 }
 
+function DieChoice({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const die = singleDieKey(value)
+  const option = die && baseDice.includes(die) ? `1к${die.slice(1)}` : value
+  return <ChoiceField label={label} value={option} options={resourceDice} onChange={onChange} editable />
+}
+
 function TextValue({ label, value, onChange, editable }: { label: string; value: string; onChange: (value: string) => void; editable: boolean }) {
   return <article className="text-value" role="group" aria-label={label}><span>{label}</span>{editable ? <RichTextEditor label={label} value={value} onChange={onChange} /> : <FormattedText text={noValue(value)} />}</article>
 }
@@ -566,13 +573,21 @@ function ResourceCard({ title, caption, color, resourceKey, interactive = false,
   const state = useCharacterStore()
   const resource = state.resources[resourceKey]
   const dieType = state.resources.superiority.dieType ?? ''
+  const [lastSuperiorityRoll, setLastSuperiorityRoll] = useState<number | null>(null)
   return <Card className={`resource ${color}`}>
     <div className="resource-heading"><div><p className="eyebrow">{caption}</p><h3>{title}</h3></div><strong>{resourceKey === 'hp' && (resource.temporary ?? 0) > 0 ? `${resource.current} + ${resource.temporary} / ${resource.max}` : `${resource.current} / ${resource.max}`}</strong></div>
     {resourceKey === 'superiority' && (state.editing
-      ? <FieldValue label="Кость превосходства" value={dieType} onChange={state.setSuperiorityDie} editable />
+      ? <DieChoice label="Кость превосходства" value={dieType} onChange={state.setSuperiorityDie} />
       : <p className="resource-detail"><span>Кость превосходства</span><strong>{noValue(dieType)}</strong></p>)}
     {resourceKey === 'hp' ? <HpProgress current={resource.current} temporary={resource.temporary ?? 0} max={resource.max} /> : <Progress value={resource.current} max={resource.max} color={color} />}
     {(interactive || (editCurrent && state.editing)) && <Counter label={`${title}: текущее значение`} value={resource.current} onChange={(value) => state.setResource(resourceKey, value)} onAdjust={(delta) => state.adjust(resourceKey, delta)} steps={resourceKey === 'superiority' ? [1] : [1, 5, 10]} />}
+    {interactive && resourceKey === 'superiority' && <>
+      <button className="button ghost resource-action" type="button" disabled={resource.current < 1 || !singleDieKey(dieType)} onClick={() => {
+        const roll = state.rollSuperiority()
+        if (roll) setLastSuperiorityRoll(roll.total)
+      }}><Dices size={16} />Бросить кость превосходства</button>
+      {lastSuperiorityRoll !== null && <p className="resource-detail" role="status"><span>Выпало</span><strong>{lastSuperiorityRoll}</strong></p>}
+    </>}
     {interactive && resourceKey === 'mana' && <button className="button ghost resource-action" type="button" disabled={manaRecoveryAmount(state.profile.manaRecovery ?? '') <= 0 || resource.current >= resource.max} onClick={state.recoverMana}><ArchiveRestore size={16} />Восстановление маны (+{manaRecoveryAmount(state.profile.manaRecovery ?? '')})</button>}
     {resourceKey === 'mana' && editMaximum && state.editing && <label className="check"><input type="checkbox" checked={state.profile.trackPatronMana === 'true' || (state.profile.trackPatronMana !== 'false' && state.resources.patronMana.max > 0)} onChange={(event) => state.setProfile('trackPatronMana', String(event.target.checked))} />Отслеживать ману покровителя</label>}
     {resourceKey === 'mana' && (state.profile.trackPatronMana === 'true' || (state.profile.trackPatronMana !== 'false' && state.resources.patronMana.max > 0)) && <div className="temporary-hp"><span>Мана покровителя: {state.resources.patronMana.current} / {state.resources.patronMana.max}</span>{interactive && <Counter label="Мана покровителя: текущее значение" value={state.resources.patronMana.current} onChange={(value) => state.setResource('patronMana', value)} onAdjust={(delta) => state.adjust('patronMana', delta)} steps={[1, 5, 10]} />}{editMaximum && state.editing && <FieldValue label="Мана покровителя: максимум" value={String(state.resources.patronMana.max)} onChange={(value) => state.setResourceMax('patronMana', Number(value))} editable />}<small className="quiet">«Божественный резерв» восстанавливает этот запас после длительного отдыха; счётчик меняется вручную.</small></div>}
@@ -584,7 +599,15 @@ function ResourceCard({ title, caption, color, resourceKey, interactive = false,
 
 function OverviewStats({ title, values }: { title: string; values: Array<[string, string]> }) {
   const state = useCharacterStore()
-  return <Card className="overview-stats"><p className="eyebrow">Показатели</p><h3>{title}</h3><div className={`stat-row stat-row-${values.length}`}>{values.map(([label, key]) => { const value = state.profile[key] ?? ''; const derived = key === 'proficiency' && !value.trim() ? effectiveProficiency(state.level, value) : null; const display = derived === null ? value : formatSignedCombatNumber(derived); return state.editing ? <FieldValue key={key} label={label} value={value} displayValue={display} placeholder={derived === null ? undefined : display} onChange={(next) => state.setProfile(key, next)} editable /> : <div className="stat-value" key={key}><span>{label}</span><strong>{noValue(display)}</strong></div> })}</div></Card>
+  return <Card className="overview-stats"><p className="eyebrow">Показатели</p><h3>{title}</h3><div className={`stat-row stat-row-${values.length}`}>{values.map(([label, key]) => {
+    const value = state.profile[key] ?? ''
+    const derived = key === 'proficiency' && !value.trim() ? effectiveProficiency(state.level, value) : null
+    const display = derived === null ? value : formatSignedCombatNumber(derived)
+    const onChange = (next: string) => state.setProfile(key, next)
+    if (!state.editing) return <div className="stat-value" key={key}><span>{label}</span><strong>{noValue(display)}</strong></div>
+    if (key === 'hitDie') return <DieChoice key={key} label={label} value={value} onChange={onChange} />
+    return <FieldValue key={key} label={label} value={value} displayValue={display} placeholder={derived === null ? undefined : display} onChange={onChange} editable />
+  })}</div></Card>
 }
 
 function HpProgress({ current, temporary, max }: { current: number; temporary: number; max: number }) {
@@ -594,7 +617,7 @@ function HpProgress({ current, temporary, max }: { current: number; temporary: n
 
 function CustomResources() {
   const { customResources, upsertCustomResource, deleteCustomResource } = useCharacterStore()
-  return <section className="page-stack"><div className="section-title"><div><h3>Дополнительные ресурсы</h3><p className="quiet">Например, Искры или другие ресурсы способностей. Значения изменяются вручную.</p></div><button type="button" className="button ghost small" onClick={() => upsertCustomResource({ id: newId(), name: 'Новый ресурс', current: 0, max: 0 })}><Plus size={15} />Добавить ресурс</button></div>{customResources.length > 0 && <div className="resource-grid">{customResources.map((resource) => <Card key={resource.id}><div className="section-title"><label className="field-value"><span>Название</span><input aria-label={`Название ресурса ${resource.name}`} value={resource.name} onChange={(event) => upsertCustomResource({ ...resource, name: event.target.value })} /></label><button type="button" className="button ghost small" aria-label={`Удалить ресурс ${resource.name}`} onClick={() => { if (window.confirm(`Удалить ресурс «${resource.name}»?`)) deleteCustomResource(resource.id) }}><Trash2 size={15} /></button></div><FieldValue label="Максимум" value={String(resource.max)} editable onChange={(value) => upsertCustomResource({ ...resource, max: Number(value) })} /><Counter label={`${resource.name}: текущее значение`} value={resource.current} onChange={(current) => upsertCustomResource({ ...resource, current })} onAdjust={(delta) => upsertCustomResource({ ...resource, current: resource.current + delta })} steps={[1, 5]} /></Card>)}</div>}</section>
+  return <section className="page-stack"><div className="section-title"><div><h3>Дополнительные ресурсы</h3><p className="quiet">Например, Искры или другие ресурсы способностей. Значения изменяются вручную.</p></div><button type="button" className="button ghost small" onClick={() => upsertCustomResource({ id: newId(), name: 'Новый ресурс', current: 0, max: 0 })}><Plus size={15} />Добавить ресурс</button></div>{customResources.length > 0 && <div className="resource-grid">{customResources.map((resource) => <Card key={resource.id}><div className="section-title"><label className="field-value"><span>Название</span><input aria-label={`Название ресурса ${resource.name}`} value={resource.name} onChange={(event) => upsertCustomResource({ ...resource, name: event.target.value })} /></label><button type="button" className="button ghost small" aria-label={`Удалить ресурс ${resource.name}`} onClick={() => { if (window.confirm(`Удалить ресурс «${resource.name}»?`)) deleteCustomResource(resource.id) }}><Trash2 size={15} /></button></div><FieldValue label="Максимум" value={String(resource.max)} editable onChange={(value) => upsertCustomResource({ ...resource, max: Number(value) })} /><Progress value={resource.current} max={resource.max} color="bone" /><Counter label={`${resource.name}: текущее значение`} value={resource.current} onChange={(current) => upsertCustomResource({ ...resource, current })} onAdjust={(delta) => upsertCustomResource({ ...resource, current: resource.current + delta })} steps={[1, 5]} /></Card>)}</div>}</section>
 }
 
 function CombatPage() {
@@ -616,7 +639,8 @@ function CombatPage() {
   const [skillDetail, setSkillDetail] = useState<Skill | null>(null)
   const [itemDetail, setItemDetail] = useState<Item | null>(null)
   const equipped = state.inventory.filter((item) => item.equipped && (item.damage || item.range || /оруж/i.test(item.category)))
-  const quickSpells = [...state.spells].sort((left, right) => Number(state.favorites.includes(right.id)) - Number(state.favorites.includes(left.id)))
+  const quickAbilities = state.spells.filter((spell) => spell.spellType === 'Способность')
+  const quickSpells = [...state.spells.filter((spell) => spell.spellType !== 'Способность')].sort((left, right) => Number(state.favorites.includes(right.id)) - Number(state.favorites.includes(left.id)))
   const quickSkills = state.skills.filter((skill) => skill.status !== 'passive').concat(state.skills.filter((skill) => skill.status === 'passive'))
 
   return <div className="page-stack combat-page">
@@ -650,7 +674,8 @@ function CombatPage() {
       <div className="combat-quick-sections">
         <QuickContentSection title="Экипированное оружие" empty="Нет экипированных предметов" entries={equipped.map((item) => ({ id: item.id, name: item.name, imageId: item.imageId, meta: [item.damage, item.range].filter(Boolean).join(' · '), onOpen: () => setItemDetail(item) }))} />
         <QuickContentSection title="Заклинания" empty="Заклинания не добавлены" entries={quickSpells.map((spell) => ({ id: spell.id, name: spell.name, imageId: spell.imageId, meta: [spell.runic ? `Руна · готово ${spell.preparedRuneCount ?? 0}` : spell.requiresPreparation === false ? 'Без подготовки' : spell.prepared === false ? 'Не подготовлено' : '', spellPaymentOptions(spell).length || (!spell.runic && spell.additionalCostNote?.trim()) ? spellCostSummary(spell) : '', spell.actionType, spell.range].filter(Boolean).join(' · '), onOpen: () => setSpellDetail(spell) }))} />
-        <QuickContentSection title="Способности и навыки" empty="Навыки не добавлены" entries={quickSkills.map((skill) => ({ id: skill.id, name: skill.name, imageId: skill.imageId, meta: [skill.manaCost == null ? '' : `${skill.manaCost} маны`, skill.hpCost == null ? '' : `${skill.hpCost} HP`, skill.superiorityCost == null ? '' : `${skill.superiorityCost} превосходства`, skill.hitDiceCost == null ? '' : `Кости хитов: ${skill.hitDiceCost}`, skill.costMode === 'choose' ? 'Оплата на выбор' : skill.costMode === 'combined' ? 'Совместная оплата' : '', skill.uses ? `${skill.uses.current}/${skill.uses.max} применений` : '', skill.actionType, skill.status === 'reaction' ? 'Реакция' : ''].filter(Boolean).join(' · '), onOpen: () => setSkillDetail(skill) }))} />
+        <QuickContentSection title="Способности" empty="Способности не добавлены" entries={quickAbilities.map((spell) => ({ id: spell.id, name: spell.name, imageId: spell.imageId, meta: [spell.actionType, spell.difficulty, spell.restrictions, spell.manaCost == null ? '' : `${spell.manaCost} маны`].filter(Boolean).join(' · '), onOpen: () => setSpellDetail(spell) }))} />
+        <QuickContentSection title="Умения" empty="Умения не добавлены" entries={quickSkills.map((skill) => ({ id: skill.id, name: skill.name, imageId: skill.imageId, meta: [skill.manaCost == null ? '' : `${skill.manaCost} маны`, skill.hpCost == null ? '' : `${skill.hpCost} HP`, skill.superiorityCost == null ? '' : `${skill.superiorityCost} превосходства`, skill.hitDiceCost == null ? '' : `Кости хитов: ${skill.hitDiceCost}`, skill.costMode === 'choose' ? 'Оплата на выбор' : skill.costMode === 'combined' ? 'Совместная оплата' : '', skill.uses ? `${skill.uses.current}/${skill.uses.max} применений` : '', skill.actionType, skill.status === 'reaction' ? 'Реакция' : ''].filter(Boolean).join(' · '), onOpen: () => setSkillDetail(skill) }))} />
       </div>
     </section>
 
@@ -837,6 +862,7 @@ function Characteristics() {
 
 function SpellsPage() {
   const state = useCharacterStore()
+  const [recordType, setRecordType] = useState<'all' | 'spells' | 'abilities'>('all')
   const [query, setQuery] = useState('')
   const [element, setElement] = useState('Все')
   const [favoritesOnly, setFavoritesOnly] = useState(false)
@@ -844,7 +870,8 @@ function SpellsPage() {
   const [editing, setEditing] = useState<Spell | 'new' | null>(null)
   const [detail, setDetail] = useState<Spell | null>(null)
   const [notice, setNotice] = useState('')
-  const preparedCount = state.spells.filter((spell) => !spell.runic && spell.requiresPreparation !== false && spell.prepared !== false).length
+  const abilityCount = state.spells.filter((spell) => spell.spellType === 'Способность').length
+  const preparedCount = state.spells.filter((spell) => spell.spellType !== 'Способность' && !spell.runic && spell.requiresPreparation !== false && spell.prepared !== false).length
   const capacityText = (state.profile.spellCapacity || '').trim()
   const numericCapacity = /^\d+$/.test(capacityText) ? Number(capacityText) : null
   const elements = ['Все', ...new Set(state.spells.flatMap((spell) => spell.elements).filter(Boolean))]
@@ -854,7 +881,8 @@ function SpellsPage() {
     const componentTokens = spell.components.toLocaleLowerCase().split(/[\s,;/]+/).filter(Boolean)
     const isComponentQuery = normalizedQuery === 'в' || normalizedQuery === 'с'
     const matchesQuery = !normalizedQuery || (isComponentQuery ? componentTokens.includes(normalizedQuery) : searchable.includes(normalizedQuery))
-    return matchesQuery && (element === 'Все' || spell.elements.includes(element)) && (!favoritesOnly || state.favorites.includes(spell.id))
+    const isAbility = spell.spellType === 'Способность'
+    return matchesQuery && (recordType === 'all' || (recordType === 'abilities') === isAbility) && (recordType === 'abilities' || element === 'Все' || spell.elements.includes(element)) && (!favoritesOnly || state.favorites.includes(spell.id))
   }).sort((left, right) => {
     if (manaSort === 'default') return 0
     const leftOptions = spellPaymentOptions(left)
@@ -880,13 +908,45 @@ function SpellsPage() {
 
   return <div className="page-stack">
     <section className="page-toolbar ability-toolbar">
-      <div className="filters"><input aria-label="Поиск заклинаний" placeholder="Поиск по всем параметрам…" value={query} onChange={(event) => setQuery(event.target.value)} /><select aria-label="Элемент" value={element} onChange={(event) => setElement(event.target.value)}>{elements.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Сортировка по мане" value={manaSort} onChange={(event) => setManaSort(event.target.value as typeof manaSort)}><option value="default">Исходный порядок</option><option value="asc">Мана: сначала меньше</option><option value="desc">Мана: сначала больше</option></select><button type="button" className={favoritesOnly ? 'filter-toggle active' : 'filter-toggle'} aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(!favoritesOnly)}><Heart size={15} fill={favoritesOnly ? 'currentColor' : 'none'} />Только избранное</button></div>
-      <button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={16} />Добавить заклинание</button>
+      <div className="filters"><div className="tabs" aria-label="Тип записи">{([['all', `Все (${state.spells.length})`], ['spells', 'Заклинания'], ['abilities', `Способности (${abilityCount})`]] as const).map(([key, label]) => <button key={key} type="button" className={recordType === key ? 'active' : ''} aria-pressed={recordType === key} onClick={() => setRecordType(key)}>{label}</button>)}</div><input aria-label="Поиск заклинаний" placeholder="Поиск по всем параметрам…" value={query} onChange={(event) => setQuery(event.target.value)} />{recordType !== 'abilities' && <><select aria-label="Элемент" value={element} onChange={(event) => setElement(event.target.value)}>{elements.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Сортировка по мане" value={manaSort} onChange={(event) => setManaSort(event.target.value as typeof manaSort)}><option value="default">Исходный порядок</option><option value="asc">Мана: сначала меньше</option><option value="desc">Мана: сначала больше</option></select></>}<button type="button" className={favoritesOnly ? 'filter-toggle active' : 'filter-toggle'} aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(!favoritesOnly)}><Heart size={15} fill={favoritesOnly ? 'currentColor' : 'none'} />Только избранное</button></div>
+      <button className="button primary" type="button" onClick={() => setEditing(recordType === 'abilities' ? { ...blankSpell(), spellType: 'Способность', requiresPreparation: false, prepared: false } : 'new')}><Plus size={16} />Добавить {recordType === 'abilities' ? 'способность' : 'заклинание'}</button>
     </section>
-    <p className="quiet">Подготовлено заклинаний: {preparedCount}. Ёмкость: {state.profile.spellCapacity || 'не указана'}. Подготовку можно изменить в редакторе заклинания.</p>
-    {numericCapacity !== null && preparedCount > numericCapacity && <p className="notice" role="status">Подготовлено больше заклинаний, чем указано в ёмкости. Проверьте список и правила вашего персонажа.</p>}
+    {recordType !== 'abilities' && <p className="quiet">Подготовлено заклинаний: {preparedCount}. Ёмкость: {state.profile.spellCapacity || 'не указана'}. Подготовку можно изменить в редакторе заклинания.</p>}
+    {recordType !== 'abilities' && numericCapacity !== null && preparedCount > numericCapacity && <p className="notice" role="status">Подготовлено больше заклинаний, чем указано в ёмкости. Проверьте список и правила вашего персонажа.</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
-    {filtered.length ? <section className="ability-grid spell-grid">{filtered.map((spell) => { const damage = spell.damage || (!spell.elements.includes('Исцеление') ? spell.damageOrHealing : ''); const healing = spell.healing || (spell.elements.includes('Исцеление') ? spell.damageOrHealing : ''); return <Card key={spell.id} className="ability-card spell-card"><button className="favorite" type="button" aria-label={state.favorites.includes(spell.id) ? `Убрать «${spell.name}» из избранного` : `Добавить «${spell.name}» в избранное`} aria-pressed={state.favorites.includes(spell.id)} onClick={() => state.toggleFavorite(spell.id)}><Heart size={18} fill={state.favorites.includes(spell.id) ? 'currentColor' : 'none'} /></button><button className="ability-open" type="button" onClick={() => setDetail(spell)}><ImageFrame imageId={spell.imageId} label={spell.name} className="ability-image spell-image" /><div className="ability-copy"><p className="eyebrow">{spell.elements.join(' · ') || 'Элемент не указан'}</p><h3>{spell.name}</h3><div className="ability-meta"><span>{spellPreparationLabel(spell)}</span>{spell.runic && <span>Готово рун: {spell.preparedRuneCount ?? 0}</span>}<span>{spellCostSummary(spell)}</span>{spell.level && <span>{spell.level}</span>}{spell.difficulty && <span>{spell.difficulty}</span>}{spell.characteristic && <span>{spell.characteristic}</span>}</div><FormattedText className="ability-summary" text={spell.summary || 'Краткое описание не указано.'} /><dl className="spell-facts">{damage && damage !== '—' && <Detail label="Урон" value={damage} />}{healing && healing !== '—' && <Detail label="Лечение" value={healing} />}{spell.components && <Detail label="Компоненты" value={spell.components} />}{spell.actionType && <Detail label="Действие" value={spell.actionType} />}{spell.target && <Detail label="Цель" value={spell.target} />}{spell.range && <Detail label="Дистанция" value={spell.range} />}{spell.duration && <Detail label="Длительность" value={spell.duration} />}</dl></div></button><CardActions itemName={spell.name} leftAction={spellPaymentOptions(spell).length ? <SpellPaymentButtons spell={spell} onPay={(cost, label) => castSpell(spell, cost, label)} compact /> : undefined} onEdit={() => setEditing(spell)} onDuplicate={() => void duplicate(spell)} onDelete={() => { if (window.confirm(`Удалить «${spell.name}»?`)) { state.deleteSpell(spell.id); setNotice(`Заклинание «${spell.name}» удалено.`) } }} /></Card> })}</section> : <EmptyState title="Заклинания не найдены" text="Измените поиск или фильтр, либо добавьте новую способность." />}
+    {filtered.length ? <section className="ability-grid spell-grid">{filtered.map((spell) => {
+      const isAbility = spell.spellType === 'Способность'
+      const damage = spell.damage || (!spell.elements.includes('Исцеление') ? spell.damageOrHealing : '')
+      const healing = spell.healing || (spell.elements.includes('Исцеление') ? spell.damageOrHealing : '')
+      return <Card key={spell.id} className="ability-card spell-card">
+        <button className="favorite" type="button" aria-label={state.favorites.includes(spell.id) ? `Убрать «${spell.name}» из избранного` : `Добавить «${spell.name}» в избранное`} aria-pressed={state.favorites.includes(spell.id)} onClick={() => state.toggleFavorite(spell.id)}><Heart size={18} fill={state.favorites.includes(spell.id) ? 'currentColor' : 'none'} /></button>
+        <button className="ability-open" type="button" onClick={() => setDetail(spell)}>
+          <ImageFrame imageId={spell.imageId} label={spell.name} className="ability-image spell-image" />
+          <div className="ability-copy">
+            <p className="eyebrow">{isAbility ? 'Способность' : spell.elements.join(' · ') || 'Элемент не указан'}</p>
+            <h3>{spell.name}</h3>
+            <div className="ability-meta">
+              {!isAbility && <><span>{spellPreparationLabel(spell)}</span>{spell.runic && <span>Готово рун: {spell.preparedRuneCount ?? 0}</span>}<span>{spellCostSummary(spell)}</span>{spell.level && <span>{spell.level}</span>}</>}
+              {isAbility && spell.restrictions && <span>{spell.restrictions.split('\n')[0]}</span>}
+              {spell.difficulty && <span>{spell.difficulty}</span>}
+              {spell.actionType && <span>{spell.actionType}</span>}
+              {!isAbility && spell.characteristic && <span>{spell.characteristic}</span>}
+            </div>
+            <FormattedText className="ability-summary" text={spell.summary || 'Краткое описание не указано.'} />
+            {!isAbility && <dl className="spell-facts">
+              {damage && damage !== '—' && <Detail label="Урон" value={damage} />}
+              {healing && <Detail label="Лечение" value={healing} />}
+              {spell.components && <Detail label="Компоненты" value={spell.components} />}
+              {spell.actionType && <Detail label="Действие" value={spell.actionType} />}
+              {spell.target && <Detail label="Цель" value={spell.target} />}
+              {spell.range && <Detail label="Дистанция" value={spell.range} />}
+              {spell.duration && <Detail label="Длительность" value={spell.duration} />}
+            </dl>}
+          </div>
+        </button>
+        <CardActions itemName={spell.name} leftAction={!isAbility && spellPaymentOptions(spell).length ? <SpellPaymentButtons spell={spell} onPay={(cost, label) => castSpell(spell, cost, label)} compact /> : undefined} onEdit={() => setEditing(spell)} onDuplicate={() => void duplicate(spell)} onDelete={() => { if (window.confirm(`Удалить «${spell.name}»?`)) { state.deleteSpell(spell.id); setNotice(`${isAbility ? 'Способность' : 'Заклинание'} «${spell.name}» удалено.`) } }} />
+      </Card>
+    })}</section> : <EmptyState title={recordType === 'abilities' ? 'Способности не найдены' : 'Записи не найдены'} text="Измените поиск или фильтр, либо добавьте запись." />}
     {editing && <SpellEditor spell={editing === 'new' ? blankSpell() : editing} onClose={() => setEditing(null)} />}
     {detail && <SpellDetail spell={detail} onClose={() => setDetail(null)} />}
   </div>
@@ -908,6 +968,7 @@ function SpellPaymentButtons({ spell, onPay, compact = false }: { spell: Spell; 
 }
 
 function SpellDetail({ spell, onClose }: { spell: Spell; onClose: () => void }) {
+  const isAbility = spell.spellType === 'Способность'
   const { cast, resources, adjustPreparedRunes, spells } = useCharacterStore()
   const readyRunes = spells.find((entry) => entry.id === spell.id)?.preparedRuneCount ?? 0
   const characteristics = useCharacterStore((state) => state.characteristics)
@@ -928,7 +989,7 @@ function SpellDetail({ spell, onClose }: { spell: Spell; onClose: () => void }) 
   return <Modal title={spell.name} onClose={onClose}>
     <DetailImage imageId={spell.imageId} label={spell.name} />
     <FormattedText className="lead" text={spell.summary || 'Краткое описание не указано.'} />
-    <dl className="details-grid">
+    {!isAbility && <dl className="details-grid">
       <Detail label="Подготовка" value={spellPreparationLabel(spell)} />
       {spell.runic && <Detail label="Действие руны" value={spell.runeAction ?? ''} />}
       {spell.runic && <Detail label="Условие активации" value={spell.runeTrigger ?? ''} />}
@@ -950,13 +1011,15 @@ function SpellDetail({ spell, onClose }: { spell: Spell; onClose: () => void }) 
       <Detail label="Лечение" value={healing} />
       <Detail label="Элементы" value={spell.elements.join(', ')} />
       <Detail label="Концентрация" value={spell.requiresConcentration ? 'Да' : 'Нет'} />
-    </dl>
-    {castingStats.length > 0 && <section className="long-detail"><h3>Расчёт заклинания</h3><p className="quiet">Учтены активные эффекты на характеристику и сложность спасброска; для боевой магии также учитывается эффект на атаку.</p><dl className="details-grid">{castingStats.map((stat) => <Detail key={stat.name} label={`${stat.name}${stat.proficient && !spell.runic ? ' · владение' : ''}`} value={`${spell.runic ? 'Проверка создания' : 'Атака'} ${formatSignedCombatNumber(stat.attack)} · Сл. спасброска ${stat.saveDc}`} />)}</dl></section>}
-    <LongDetail label="Описание" value={spell.description} />
-    <LongDetail label="Эффекты" value={spell.effects} />
-    {spell.additionalEffect && <LongDetail label="Дополнительный эффект" value={spell.additionalEffect} />}
-    {!spell.runic && spell.additionalCostNote?.trim() && <LongDetail label="Дополнительные затраты и условия оплаты (вручную)" value={spell.additionalCostNote} />}
-    <LongDetail label="Ограничения" value={spell.restrictions} />
+    </dl>}
+    {isAbility && <dl className="details-grid"><Detail label="Тип" value={spell.actionType} /><Detail label="Сложность" value={spell.difficulty} /></dl>}
+    {!isAbility && castingStats.length > 0 && <section className="long-detail"><h3>Расчёт заклинания</h3><p className="quiet">Учтены активные эффекты на характеристику и сложность спасброска; для боевой магии также учитывается эффект на атаку.</p><dl className="details-grid">{castingStats.map((stat) => <Detail key={stat.name} label={`${stat.name}${stat.proficient && !spell.runic ? ' · владение' : ''}`} value={`${spell.runic ? 'Проверка создания' : 'Атака'} ${formatSignedCombatNumber(stat.attack)} · Сл. спасброска ${stat.saveDc}`} />)}</dl></section>}
+    {spell.description.trim() && <LongDetail label="Описание" value={spell.description} />}
+    {spell.effects.trim() && <LongDetail label={isAbility ? 'Эффект' : 'Эффекты'} value={spell.effects} />}
+    {spell.additionalEffect?.trim() && <LongDetail label="Дополнительный эффект" value={spell.additionalEffect} />}
+    {!isAbility && spell.additionalCostNote?.trim() && <LongDetail label="Дополнительные затраты и условия оплаты (вручную)" value={spell.additionalCostNote} />}
+    {!isAbility && spell.restrictions.trim() && <LongDetail label="Ограничения" value={spell.restrictions} />}
+    {isAbility && spell.restrictions.trim() && <LongDetail label="Требования и ограничения" value={spell.restrictions} />}
     {spell.runic && <section className="long-detail"><h3>Готовых рун: {readyRunes}</h3><p>После успешного создания отметьте готовую руну; при активации счётчик уменьшится без повторного списания маны. Списание маны выполняется отдельно.</p><button className="button ghost small" type="button" onClick={() => adjustPreparedRunes(spell.id, 1)}>Отметить созданную руну</button> <button className="button ghost small" type="button" disabled={readyRunes <= 0} onClick={() => adjustPreparedRunes(spell.id, -1)}>Активировать готовую руну</button></section>}
     {spellPaymentOptions(spell).length > 0 && <SpellPaymentButtons spell={spell} onPay={useSpell} />}
     {message && <p className="notice" role="status">{message}</p>}
@@ -1011,6 +1074,7 @@ function SpellEditor({ spell, onClose }: { spell: Spell; onClose: () => void }) 
   const standardCharacteristics = ['Сила', 'Ловкость', 'Телосложение', 'Интеллект', 'Мудрость', 'Харизма']
   const [customCharacteristic, setCustomCharacteristic] = useState(Boolean(spell.characteristic) && !standardCharacteristics.includes(spell.characteristic))
   const [costError, setCostError] = useState('')
+  const isAbility = draft.spellType === 'Способность'
   const runeMetrics = draft.runic ? runeComplexityMetrics(draft.runeComplexity) : null
   const field = (key: keyof Spell, label: string, type: 'text' | 'number' | 'textarea' = 'text') => <EditorField label={label} value={String(draft[key] ?? '')} type={type} onChange={(value) => setDraft({ ...draft, [key]: type === 'number' ? (value === '' ? null : Number(value)) : value } as Spell)} />
   const updateManaOption = (index: number, option: SpellManaCostOption) => setDraft({ ...draft, manaCostOptions: (draft.manaCostOptions ?? []).map((current, currentIndex) => currentIndex === index ? option : current), ...(index === 0 ? { manaCost: option.cost } : {}) })
@@ -1035,14 +1099,18 @@ function SpellEditor({ spell, onClose }: { spell: Spell; onClose: () => void }) 
     upsert({ ...draft, id: draft.id || newId(), ...(manaCostOptions?.length ? { manaCost: manaCostOptions[0].cost, manaCostOptions } : { manaCostOptions: undefined }), damageOrHealing: draft.damage || draft.healing || '' })
     onClose()
   }
-  return <Modal title={spell.id ? 'Редактировать заклинание' : 'Новое заклинание'} onClose={onClose}>
+  return <Modal title={isAbility ? spell.id ? 'Редактировать способность' : 'Новая способность' : spell.id ? 'Редактировать заклинание' : 'Новое заклинание'} onClose={onClose}>
     <div className="editor-grid">
       {field('name', 'Название')}
-      <label className="editor-field"><span>Характеристика</span><select value={customCharacteristic ? 'custom' : draft.characteristic} onChange={(event) => { const value = event.target.value; setCustomCharacteristic(value === 'custom'); if (value !== 'custom') setDraft({ ...draft, characteristic: value }) }}><option value="">Не выбрано</option>{standardCharacteristics.map((value) => <option key={value}>{value}</option>)}<option value="custom">Другое значение…</option></select></label>
-      {customCharacteristic && <EditorField label="Нестандартная характеристика" value={draft.characteristic} onChange={(characteristic) => setDraft({ ...draft, characteristic })} />}
+      {!isAbility && <label className="editor-field"><span>Характеристика</span><select value={customCharacteristic ? 'custom' : draft.characteristic} onChange={(event) => { const value = event.target.value; setCustomCharacteristic(value === 'custom'); if (value !== 'custom') setDraft({ ...draft, characteristic: value }) }}><option value="">Не выбрано</option>{standardCharacteristics.map((value) => <option key={value}>{value}</option>)}<option value="custom">Другое значение…</option></select></label>}
+      {!isAbility && customCharacteristic && <EditorField label="Нестандартная характеристика" value={draft.characteristic} onChange={(characteristic) => setDraft({ ...draft, characteristic })} />}
+      {field('actionType', 'Тип действия')}
+      {(!draft.manaCostOptions?.length || draft.runic) && field('manaCost', 'Стоимость маны', 'number')}
+      {field('description', 'Описание', 'textarea')}
+    </div>
+    {!isAbility && <details className="editor-section" open={Boolean(draft.components || draft.target || draft.range || draft.area)}><summary>Цель, дистанция и применение</summary><div className="editor-grid">
       {field('components', 'Компоненты')}
       {field('castingTime', 'Время наложения')}
-      {field('actionType', 'Тип действия')}
       {field('target', 'Цель')}
       {field('range', 'Дистанция')}
       {field('area', 'Область')}
@@ -1051,22 +1119,32 @@ function SpellEditor({ spell, onClose }: { spell: Spell; onClose: () => void }) 
       {field('attackAdjustment', 'Доп. бонус к атаке или проверке руны')}
       {field('saveDcAdjustment', 'Доп. бонус к Сл. спасброска')}
       {field('duration', 'Длительность')}
-      {(!draft.manaCostOptions?.length || draft.runic) && field('manaCost', 'Стоимость маны', 'number')}
+    </div></details>}
+    {!isAbility && <details className="editor-section" open={Boolean(draft.manaCostOptions?.length || draft.additionalCostNote)}><summary>Дополнительные затраты</summary><div className="editor-grid">
       {!draft.runic && <section className="spell-cost-editor">
         <div className="section-title"><div><h3>Варианты стоимости маны</h3><p className="quiet">Для разных действий или масштабов заклинания. Рунные записи этим не изменяются.</p></div><button className="button ghost small" type="button" onClick={addManaOption}><Plus size={14} />Добавить вариант</button></div>
         {draft.manaCostOptions?.map((option, index) => <div className="spell-cost-row" key={index}><EditorField label={`Название варианта ${index + 1}`} value={option.label} onChange={(label) => updateManaOption(index, { ...option, label })} /><label className="editor-field"><span>{`Стоимость маны ${index + 1}`}</span><input aria-label={`Стоимость маны ${index + 1}`} type="number" min="0" step="any" value={Number.isFinite(option.cost) ? option.cost : ''} onChange={(event) => updateManaOption(index, { ...option, cost: event.target.value === '' ? Number.NaN : Number(event.target.value) })} /></label><button className="button ghost small delete" type="button" aria-label={`Удалить вариант стоимости ${index + 1}`} onClick={() => removeManaOption(index)}><Trash2 size={14} /></button></div>)}
         {costError && <p className="notice" role="alert">{costError}</p>}
       </section>}
       {!draft.runic && field('additionalCostNote', 'Дополнительные затраты и условия оплаты (вручную)', 'textarea')}
+    </div></details>}
+    {isAbility ? <details className="editor-section" open={Boolean(draft.effects || draft.restrictions || draft.summary || draft.tags.length)}><summary>Эффект и требования</summary><div className="editor-grid">
+      {field('difficulty', 'Сложность')}
+      {field('summary', 'Кратко', 'textarea')}
+      {field('effects', 'Эффект', 'textarea')}
+      {field('restrictions', 'Требования и ограничения', 'textarea')}
+      <TagInput label="Теги" value={draft.tags} onChange={(tags) => setDraft({ ...draft, tags })} />
+    </div></details> : <details className="editor-section" open={Boolean(draft.damage || draft.healing || draft.effects || draft.additionalEffect || draft.restrictions)}><summary>Урон, лечение и эффекты</summary><div className="editor-grid">
       {field('damage', 'Урон')}
       {field('healing', 'Лечение')}
-      {field('difficulty', 'Сложность')}
-      {field('level', 'Уровень')}
       {field('summary', 'Кратко', 'textarea')}
-      {field('description', 'Описание', 'textarea')}
       {field('effects', 'Эффекты', 'textarea')}
       {field('additionalEffect', 'Дополнительный эффект', 'textarea')}
       {field('restrictions', 'Ограничения', 'textarea')}
+    </div></details>}
+    {!isAbility && <details className="editor-section" open={Boolean(draft.runic || draft.elements.length || draft.tags.length)}><summary>Подготовка, руны и прочее</summary><div className="editor-grid">
+      {field('difficulty', 'Сложность')}
+      {field('level', 'Уровень')}
       <TagInput label="Элементы" value={draft.elements} onChange={(elements) => setDraft({ ...draft, elements })} />
       <TagInput label="Теги" value={draft.tags} onChange={(tags) => setDraft({ ...draft, tags })} />
       <label className="check"><input type="checkbox" checked={draft.runic === true} onChange={(event) => setDraft({ ...draft, runic: event.target.checked })} />Рунная магия</label>
@@ -1074,12 +1152,12 @@ function SpellEditor({ spell, onClose }: { spell: Spell; onClose: () => void }) 
       {draft.runic && field('runeTrigger', 'Условие активации')}
       {draft.runic && field('runeComplexity', 'Итоговая сложность руны')}
       {runeMetrics && <div className="editor-field"><span>Сл. создания: {runeMetrics.dc} · базовая стоимость: {runeMetrics.mana} маны{runeMetrics.impossible ? ' · нужны особые условия' : ''}</span><button className="button ghost small" type="button" onClick={() => setDraft({ ...draft, manaCost: runeMetrics.mana })}>Подставить стоимость</button></div>}
-      <label className="check"><input type="checkbox" disabled={draft.runic === true} checked={!draft.runic && draft.requiresPreparation !== false} onChange={(event) => setDraft({ ...draft, requiresPreparation: event.target.checked })} />Требует подготовки</label>
-      <label className="check"><input type="checkbox" disabled={draft.runic === true || draft.requiresPreparation === false} checked={!draft.runic && draft.requiresPreparation !== false && draft.prepared !== false} onChange={(event) => setDraft({ ...draft, prepared: event.target.checked })} />Подготовлено</label>
-      <label className="check"><input type="checkbox" checked={draft.requiresConcentration} onChange={(event) => setDraft({ ...draft, requiresConcentration: event.target.checked })} />Концентрация</label>
-    </div>
+      {!isAbility && <label className="check"><input type="checkbox" disabled={draft.runic === true} checked={!draft.runic && draft.requiresPreparation !== false} onChange={(event) => setDraft({ ...draft, requiresPreparation: event.target.checked })} />Требует подготовки</label>}
+      {!isAbility && <label className="check"><input type="checkbox" disabled={draft.runic === true || draft.requiresPreparation === false} checked={!draft.runic && draft.requiresPreparation !== false && draft.prepared !== false} onChange={(event) => setDraft({ ...draft, prepared: event.target.checked })} />Подготовлено</label>}
+      {!isAbility && <label className="check"><input type="checkbox" checked={draft.requiresConcentration} onChange={(event) => setDraft({ ...draft, requiresConcentration: event.target.checked })} />Концентрация</label>}
+    </div></details>}
     <ImageInput value={draft.imageId} onChange={(imageId) => setDraft({ ...draft, ...(imageId ? { imageId } : { imageId: undefined }) })} />
-    <button className="button primary" type="button" onClick={save}>Сохранить заклинание</button>
+    <button className="button primary" type="button" onClick={save}>Сохранить {isAbility ? 'способность' : 'заклинание'}</button>
   </Modal>
 }
 
@@ -1161,7 +1239,7 @@ function SkillEditor({ skill, onClose }: { skill: Skill; onClose: () => void }) 
     if (!Number.isSafeInteger(max) || max < 0) return
     setDraft({ ...draft, uses: { current: skill.uses ? Math.min(draft.uses?.current ?? skill.uses.current, max) : max, max, recovery: draft.uses?.recovery ?? '' } })
   }
-  return <Modal title={skill.id ? 'Редактировать навык' : 'Новый навык'} onClose={onClose}><div className="editor-grid">{field('name', 'Название')}{field('difficulty', 'Сложность')}{field('actionType', 'Тип действия')}{field('characteristic', 'Основные характеристики')}<EditorField label="Стоимость маны (необязательно)" type="number" value={draft.manaCost == null ? '' : String(draft.manaCost)} onChange={(value) => setDraft({ ...draft, manaCost: value === '' ? null : Math.max(0, Number(value) || 0) })} /><EditorField label="Стоимость HP (необязательно)" type="number" value={draft.hpCost == null ? '' : String(draft.hpCost)} onChange={(value) => setDraft({ ...draft, hpCost: value === '' || !Number.isSafeInteger(Number(value)) ? undefined : Math.max(0, Number(value)) })} /><EditorField label="Стоимость превосходства (необязательно)" type="number" value={draft.superiorityCost == null ? '' : String(draft.superiorityCost)} onChange={(value) => setDraft({ ...draft, superiorityCost: value === '' || !Number.isSafeInteger(Number(value)) ? null : Math.max(0, Number(value)) })} /><EditorField label="Стоимость костей хитов (необязательно)" type="number" value={draft.hitDiceCost == null ? '' : String(draft.hitDiceCost)} onChange={(value) => setDraft({ ...draft, hitDiceCost: value === '' || !Number.isSafeInteger(Number(value)) ? undefined : Math.max(0, Number(value)) })} /><label className="editor-field"><span>Связь затрат</span><select value={draft.costMode ?? 'independent'} onChange={(event) => setDraft({ ...draft, costMode: event.target.value as SkillCostMode })}><option value="independent">Списывать каждый ресурс отдельно</option><option value="choose">Выбрать один вариант («или»)</option><option value="combined">Списать все вместе («и»)</option></select></label><EditorField label="Лимит применений (необязательно)" type="number" value={draft.uses == null ? '' : String(draft.uses.max)} onChange={setMaxUses} />{draft.uses && <EditorField label="Когда восстанавливаются применения" value={draft.uses.recovery} onChange={(value) => setDraft({ ...draft, uses: { ...draft.uses!, recovery: value } })} />}<label className="editor-field"><span>Статус</span><select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as Skill['status'] })}><option value="active">Активный</option><option value="passive">Пассивный</option><option value="reaction">Реакция</option></select></label>{field('summary', 'Кратко', 'textarea')}{field('mechanics', 'Механика', 'textarea')}{field('progression', 'Прогрессия', 'textarea')}{field('condition', 'Условие', 'textarea')}{field('requirement', 'Требование', 'textarea')}<TagInput label="Теги" value={draft.tags} onChange={(tags) => setDraft({ ...draft, tags })} /></div><ImageInput value={draft.imageId} onChange={(imageId) => setDraft({ ...draft, ...(imageId ? { imageId } : { imageId: undefined }) })} /><button className="button primary" type="button" onClick={() => { upsert({ ...draft, id: draft.id || newId() }); onClose() }}>Сохранить навык</button></Modal>
+return <Modal title={skill.id ? 'Редактировать навык' : 'Новый навык'} onClose={onClose}><div className="editor-grid">{field('name', 'Название')}{field('difficulty', 'Сложность')}{field('actionType', 'Тип действия')}{field('characteristic', 'Основные характеристики')}{field('mechanics', 'Механика', 'textarea')}</div><details className="editor-section" open={Boolean(draft.manaCost != null || draft.hpCost != null || draft.superiorityCost != null || draft.hitDiceCost != null || draft.uses)}><summary>Затраты и применения</summary><div className="editor-grid"><EditorField label="Стоимость маны (необязательно)" type="number" value={draft.manaCost == null ? '' : String(draft.manaCost)} onChange={(value) => setDraft({ ...draft, manaCost: value === '' ? null : Math.max(0, Number(value) || 0) })} /><EditorField label="Стоимость HP (необязательно)" type="number" value={draft.hpCost == null ? '' : String(draft.hpCost)} onChange={(value) => setDraft({ ...draft, hpCost: value === '' || !Number.isSafeInteger(Number(value)) ? undefined : Math.max(0, Number(value)) })} /><EditorField label="Стоимость превосходства (необязательно)" type="number" value={draft.superiorityCost == null ? '' : String(draft.superiorityCost)} onChange={(value) => setDraft({ ...draft, superiorityCost: value === '' || !Number.isSafeInteger(Number(value)) ? null : Math.max(0, Number(value)) })} /><EditorField label="Стоимость костей хитов (необязательно)" type="number" value={draft.hitDiceCost == null ? '' : String(draft.hitDiceCost)} onChange={(value) => setDraft({ ...draft, hitDiceCost: value === '' || !Number.isSafeInteger(Number(value)) ? undefined : Math.max(0, Number(value)) })} /><label className="editor-field"><span>Связь затрат</span><select value={draft.costMode ?? 'independent'} onChange={(event) => setDraft({ ...draft, costMode: event.target.value as SkillCostMode })}><option value="independent">Списывать каждый ресурс отдельно</option><option value="choose">Выбрать один вариант («или»)</option><option value="combined">Списать все вместе («и»)</option></select></label><EditorField label="Лимит применений (необязательно)" type="number" value={draft.uses == null ? '' : String(draft.uses.max)} onChange={setMaxUses} />{draft.uses && <EditorField label="Когда восстанавливаются применения" value={draft.uses.recovery} onChange={(value) => setDraft({ ...draft, uses: { ...draft.uses!, recovery: value } })} />}</div></details><div className="editor-grid"><label className="editor-field"><span>Статус</span><select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as Skill['status'] })}><option value="active">Активный</option><option value="passive">Пассивный</option><option value="reaction">Реакция</option></select></label>{field('summary', 'Кратко', 'textarea')}</div><details className="editor-section" open={Boolean(draft.progression || draft.condition || draft.requirement || draft.tags.length)}><summary>Требования, развитие и теги</summary><div className="editor-grid">{field('progression', 'Прогрессия', 'textarea')}{field('condition', 'Условие', 'textarea')}{field('requirement', 'Требование', 'textarea')}<TagInput label="Теги" value={draft.tags} onChange={(tags) => setDraft({ ...draft, tags })} /></div></details><ImageInput value={draft.imageId} onChange={(imageId) => setDraft({ ...draft, ...(imageId ? { imageId } : { imageId: undefined }) })} /><button className="button primary" type="button" onClick={() => { upsert({ ...draft, id: draft.id || newId() }); onClose() }}>Сохранить навык</button></Modal>
 }
 
 function InventoryPage() {
@@ -1194,7 +1272,7 @@ function ItemEditor({ item, onClose }: { item: Item; onClose: () => void }) {
   const upsert = useCharacterStore((state) => state.upsertItem)
   const [draft, setDraft] = useState(item)
   const field = (key: keyof Item, label: string, type: 'text' | 'textarea' = 'text') => <EditorField label={label} value={String(draft[key] ?? '')} type={type} onChange={(value) => setDraft({ ...draft, [key]: value } as Item)} />
-  return <Modal title={item.id ? 'Редактировать предмет' : 'Новый предмет'} onClose={onClose}><div className="editor-grid">{field('name', 'Название')}{field('category', 'Категория')}{field('quantity', 'Количество')}{field('damage', 'Урон')}{field('damageType', 'Тип урона')}{field('range', 'Дальность')}{field('cost', 'Стоимость')}{field('properties', 'Свойства', 'textarea')}{field('description', 'Описание', 'textarea')}{field('note', 'Заметки', 'textarea')}<label className="check"><input type="checkbox" checked={draft.equipped} onChange={(event) => setDraft({ ...draft, equipped: event.target.checked })} />Экипировано</label></div><ImageInput value={draft.imageId} onChange={(imageId) => setDraft({ ...draft, ...(imageId ? { imageId } : { imageId: undefined }) })} /><button className="button primary" type="button" onClick={() => { upsert({ ...draft, id: draft.id || newId() }); onClose() }}>Сохранить предмет</button></Modal>
+return <Modal title={item.id ? 'Редактировать предмет' : 'Новый предмет'} onClose={onClose}><div className="editor-grid">{field('name', 'Название')}{field('category', 'Категория')}{field('quantity', 'Количество')}{field('description', 'Описание', 'textarea')}</div><details className="editor-section" open={Boolean(draft.damage || draft.damageType || draft.range)}><summary>Боевые параметры</summary><div className="editor-grid">{field('damage', 'Урон')}{field('damageType', 'Тип урона')}{field('range', 'Дальность')}</div></details><details className="editor-section" open={Boolean(draft.cost || draft.properties || draft.note)}><summary>Стоимость, свойства и заметки</summary><div className="editor-grid">{field('cost', 'Стоимость')}{field('properties', 'Свойства', 'textarea')}{field('note', 'Заметки', 'textarea')}</div></details><label className="check"><input type="checkbox" checked={draft.equipped} onChange={(event) => setDraft({ ...draft, equipped: event.target.checked })} />Экипировано</label><ImageInput value={draft.imageId} onChange={(imageId) => setDraft({ ...draft, ...(imageId ? { imageId } : { imageId: undefined }) })} /><button className="button primary" type="button" onClick={() => { upsert({ ...draft, id: draft.id || newId() }); onClose() }}>Сохранить предмет</button></Modal>
 }
 
 function CharacterPage() {

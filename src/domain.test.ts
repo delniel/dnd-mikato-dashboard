@@ -3,6 +3,7 @@ import { createBlankCharacter, createInitialCharacter, createUrumirCharacter } f
 import type { CombatEffect } from './combat'
 import { adjustPreparedRunes, adjustSkillUses, automaticSavingThrow, calculateSkillBonus, changeResource, characteristicModifier, convertCurrency, deductHitDice, deductHp, deductMana, deductSkillCosts, deductSuperiority, effectiveProficiency, isCharacteristicScoreOutsideCurrentRange, levelUp, manaRecoveryAmount, migrateCharacter, nextSkillProficiencyRank, passiveSenseValue, proficiencyBonusForLevel, restoreCharacter, restoreMana, rollDice, runeComplexityMetrics, serializeCharacter, setLevel, setResourceMaximum, setSuperiorityDie, setTemporaryHp, spellCastingStats, thresholdForLevel, undoResource } from './domain'
 import { useCharacterStore } from './store'
+import { singleDieKey } from './domain'
 
 const base = () => createInitialCharacter()
 
@@ -411,6 +412,11 @@ describe('редактируемые данные листа', () => {
 })
 
 describe('кубики и миграция', () => {
+  it('распознаёт старую и новую запись одиночной кости, но не выражения', () => {
+    for (const value of ['1к6', '1d6', 'd6', ' 1 К 6 ']) expect(singleDieKey(value)).toBe('d6')
+    for (const value of ['', '2к6', '1d6+2', 'd1', 'd9007199254740992']) expect(singleDieKey(value)).toBeNull()
+  })
+
   it('группирует результаты по типу кубика и считает точную сумму', () => {
     const result = rollDice({ d4: 2, d10: 1 }, () => 0.5)
     expect(result.results.d4).toEqual([3, 3])
