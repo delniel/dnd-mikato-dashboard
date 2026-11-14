@@ -33,14 +33,14 @@ describe('чистый расчёт боевых параметров', () => {
     expect(state.profile.flySpeed).toBe('30')
     expect(state.profile.speed).toBe('30')
   })
-  it('учитывает изменение характеристики до 40 и отдельный эффект на сложность заклинания', () => {
+  it('не экстраполирует модификатор выше подтверждённой таблицы при изменении характеристики', () => {
     const state = createInitialCharacter()
     const characteristic = state.characteristics.find((entry) => entry.name === 'Телосложение')!
     state.profile.mainCharacteristic = characteristic.name
     state.profile.proficiency = '+3'
     state.combatEffects = [effect({ modifiers: [{ id: 'score', target: `characteristic.${characteristic.id}.score`, operation: 'SET', value: 40 }, { id: 'dc', target: 'profile.spellSaveDc', operation: 'ADD', value: 2 }] })]
-    expect(calculateSpellCombatStats('Телосложение', state)).toEqual([{ name: 'Телосложение', proficient: true, attack: 18, saveDc: 28 }])
-    expect(calculateSpellCombatStats('Телосложение', state, false, { attack: '+2', saveDc: '-1' })[0]).toMatchObject({ attack: 20, saveDc: 27 })
+    expect(calculateSpellCombatStats('Телосложение', state)).toEqual([])
+    expect(calculateSpellCombatStats('Телосложение', state, false, { attack: '+2', saveDc: '-1' })).toEqual([])
     expect(characteristic.score).toBe('30')
   })
 
@@ -51,7 +51,7 @@ describe('чистый расчёт боевых параметров', () => {
     characteristic.save = '+13'
     state.combatEffects = [effect({ modifiers: [{ id: 'score', target: `characteristic.${characteristic.id}.score`, operation: 'SET', value: 40 }] })]
     const calculations = calculateCombatState(state)
-    expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.check`)?.finalValue).toBe(15)
+    expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.check`)?.finalValue).toBe(10)
     expect(calculations.find((entry) => entry.target.id === `characteristic.${characteristic.id}.save`)?.finalValue).toBe(13)
     expect(characteristic.score).toBe('30')
   })
