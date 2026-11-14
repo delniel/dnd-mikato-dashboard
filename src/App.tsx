@@ -9,6 +9,7 @@ import { addCharacter, applyLibrarySettings, characterForActivation, collectChar
 import { librarySnapshot, useLibraryStore } from './libraryStore'
 import { useCharacterStore } from './store'
 import { FormattedText, RichTextEditor } from './richText'
+import { alignments, backgrounds, races, raceSubtypes, sizes } from './characterOptions'
 
 type Page = 'Обзор' | 'Бой' | 'Характеристики' | 'Заклинания и Способности' | 'Умения' | 'Инвентарь' | 'Персонаж' | 'Заметки' | 'Настройки'
 
@@ -473,6 +474,11 @@ function ImageFrame({ imageId, label, className = '' }: { imageId?: string; labe
   return <div className={`image-frame ${className}`}>{url ? <img src={url} alt={label} /> : <span aria-label={`Нет изображения: ${label}`}>{label.slice(0, 1).toUpperCase()}</span>}</div>
 }
 
+function DetailImage({ imageId, label }: { imageId?: string; label: string }) {
+  const url = useImageUrl(imageId)
+  return <div className="detail-image-frame">{url ? <img className="detail-image" src={url} alt={label} /> : <span aria-label={`Нет изображения: ${label}`}>{label.slice(0, 1).toUpperCase()}</span>}</div>
+}
+
 function Avatar({ imageId, name, className = '' }: { imageId?: string; name: string; className?: string }) {
   return <ImageFrame imageId={imageId} label={name} className={`avatar ${className}`} />
 }
@@ -483,6 +489,11 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 
 function FieldValue({ label, value, onChange, editable, heading = false, className = '', displayValue = value, placeholder }: { label: string; value: string; onChange?: (value: string) => void; editable?: boolean; heading?: boolean; className?: string; displayValue?: string; placeholder?: string }) {
   return <label className={`field-value ${heading ? 'heading-field' : ''} ${className}`}><span>{label}</span>{editable ? <input aria-label={label} value={value} placeholder={placeholder} onChange={(event) => onChange?.(event.target.value)} /> : heading ? <h2>{noValue(displayValue)}</h2> : <strong>{noValue(displayValue)}</strong>}</label>
+}
+
+function ChoiceField({ label, value, options, onChange, editable }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void; editable: boolean }) {
+  const hasLegacyValue = Boolean(value) && !options.includes(value)
+  return <label className="field-value"><span>{label}</span>{editable ? <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}><option value="">Не выбрано</option>{hasLegacyValue && <option value={value}>Сохранённое значение: {value}</option>}{options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <strong>{noValue(value)}</strong>}</label>
 }
 
 function TextValue({ label, value, onChange, editable }: { label: string; value: string; onChange: (value: string) => void; editable: boolean }) {
@@ -503,6 +514,10 @@ function Overview() {
   const state = useCharacterStore()
   const threshold = thresholdForLevel(state.level)
   const canLevel = threshold !== undefined && state.experience >= threshold
+  const changeRace = (race: string) => {
+    state.setProfile('race', race)
+    if (state.profile.raceSubtype && !raceSubtypes(race).includes(state.profile.raceSubtype)) state.setProfile('raceSubtype', '')
+  }
 
   return <div className="page-stack">
     <section className="hero-layout">
@@ -512,9 +527,9 @@ function Overview() {
           <FieldValue label="Имя персонажа" value={state.profile.name} onChange={(value) => state.setProfile('name', value)} editable={state.editing} heading />
           <div className="hero-details">
             <FieldValue label="Имя игрока" value={state.profile.playerName} onChange={(value) => state.setProfile('playerName', value)} editable={state.editing} />
-            <FieldValue label="Предыстория" value={state.profile.background || ''} onChange={(value) => state.setProfile('background', value)} editable={state.editing} />
-            <FieldValue label="Раса" value={state.profile.race} onChange={(value) => state.setProfile('race', value)} editable={state.editing} />
-            <FieldValue label="Подвид" value={state.profile.raceSubtype} onChange={(value) => state.setProfile('raceSubtype', value)} editable={state.editing} />
+            <ChoiceField label="Предыстория" value={state.profile.background || ''} options={backgrounds} onChange={(value) => state.setProfile('background', value)} editable={state.editing} />
+            <ChoiceField label="Раса" value={state.profile.race} options={races} onChange={changeRace} editable={state.editing} />
+            <ChoiceField label="Подвид" value={state.profile.raceSubtype} options={raceSubtypes(state.profile.race)} onChange={(value) => state.setProfile('raceSubtype', value)} editable={state.editing} />
           </div>
         </div>
         <div className="level-controls"><span>Уровень</span><strong>{state.level}</strong>{state.editing && <Counter label="Уровень" value={state.level} onChange={state.setLevel} onAdjust={state.adjustLevel} />}</div>
@@ -547,7 +562,7 @@ function Overview() {
   </div>
 }
 
-function ResourceCard({ title, caption, color, resourceKey, interactive = false, editMaximum = false, editCurrent = false }: { title: string; caption: string; color: string; resourceKey: ResourceKey; interactive?: boolean; editMaximum?: boolean; editCurrent?: boolean }) {
+function ResourceCard({ title, caption, color, resourceKey, interactive = false, editMaximum = false, editCurrent = false, showHitDieGuidance = false }: { title: string; caption: string; color: string; resourceKey: ResourceKey; interactive?: boolean; editMaximum?: boolean; editCurrent?: boolean; showHitDieGuidance?: boolean }) {
   const state = useCharacterStore()
   const resource = state.resources[resourceKey]
   const dieType = state.resources.superiority.dieType ?? ''
@@ -562,7 +577,7 @@ function ResourceCard({ title, caption, color, resourceKey, interactive = false,
     {resourceKey === 'mana' && editMaximum && state.editing && <label className="check"><input type="checkbox" checked={state.profile.trackPatronMana === 'true' || (state.profile.trackPatronMana !== 'false' && state.resources.patronMana.max > 0)} onChange={(event) => state.setProfile('trackPatronMana', String(event.target.checked))} />Отслеживать ману покровителя</label>}
     {resourceKey === 'mana' && (state.profile.trackPatronMana === 'true' || (state.profile.trackPatronMana !== 'false' && state.resources.patronMana.max > 0)) && <div className="temporary-hp"><span>Мана покровителя: {state.resources.patronMana.current} / {state.resources.patronMana.max}</span>{interactive && <Counter label="Мана покровителя: текущее значение" value={state.resources.patronMana.current} onChange={(value) => state.setResource('patronMana', value)} onAdjust={(delta) => state.adjust('patronMana', delta)} steps={[1, 5, 10]} />}{editMaximum && state.editing && <FieldValue label="Мана покровителя: максимум" value={String(state.resources.patronMana.max)} onChange={(value) => state.setResourceMax('patronMana', Number(value))} editable />}<small className="quiet">«Божественный резерв» восстанавливает этот запас после длительного отдыха; счётчик меняется вручную.</small></div>}
     {interactive && resourceKey === 'hp' && <div className="temporary-hp"><span>Временные хиты</span><Counter label="Временные хиты" value={resource.temporary ?? 0} onChange={state.setTemporaryHp} onAdjust={(delta) => state.setTemporaryHp((resource.temporary ?? 0) + delta)} steps={[1, 5, 10]} /></div>}
-    {resourceKey === 'hp' && (state.resources.hitDice.max > 0 || (editMaximum && state.editing)) && <div className="temporary-hp"><span>Кости хитов: {state.resources.hitDice.current} / {state.resources.hitDice.max}</span>{interactive && <Counter label="Кости хитов: доступно" value={state.resources.hitDice.current} onChange={(value) => state.setResource('hitDice', value)} onAdjust={(delta) => state.adjust('hitDice', delta)} />}{editMaximum && state.editing && <FieldValue label="Кости хитов: максимум" value={String(state.resources.hitDice.max)} onChange={(value) => state.setResourceMax('hitDice', Number(value))} editable />}<small className="quiet">Учитывайте восстановление костей хитов по правилам вашего персонажа. Запас меняется вручную.</small></div>}
+    {resourceKey === 'hp' && (state.resources.hitDice.max > 0 || (editMaximum && state.editing)) && <div className="temporary-hp"><span>Кости хитов: {state.resources.hitDice.current} / {state.resources.hitDice.max}</span>{interactive && <Counter label="Кости хитов: доступно" value={state.resources.hitDice.current} onChange={(value) => state.setResource('hitDice', value)} onAdjust={(delta) => state.adjust('hitDice', delta)} />}{editMaximum && state.editing && <FieldValue label="Кости хитов: максимум" value={String(state.resources.hitDice.max)} onChange={(value) => state.setResourceMax('hitDice', Number(value))} editable />}{showHitDieGuidance && <small className="quiet">Учитывайте восстановление костей хитов по правилам вашего персонажа. Запас меняется вручную.</small>}</div>}
     {editMaximum && state.editing && <div className="resource-max"><FieldValue label={`${title}: максимум`} value={String(resource.max)} onChange={(value) => state.setResourceMax(resourceKey, Number(value))} editable /></div>}
   </Card>
 }
@@ -608,7 +623,7 @@ function CombatPage() {
     <section className="combat-section">
       <div className="section-title"><div><p className="eyebrow">Общие данные персонажа</p><h2>Боевые ресурсы</h2></div><span className="mode-pill">Максимумы изменяются в основных параметрах</span></div>
       <div className="resource-grid combat-resources">
-        <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" interactive />
+        <ResourceCard title="Хиты" caption="HP" color="hp" resourceKey="hp" interactive showHitDieGuidance />
         <ResourceCard title="Мана" caption="Энергия" color="mana" resourceKey="mana" interactive />
         <ResourceCard title="Превосходство" caption="Ресурс" color="bone" resourceKey="superiority" interactive />
       </div>
@@ -643,7 +658,7 @@ function CombatPage() {
     {calculationDetail && <CombatCalculationDetail calculation={calculationDetail} onClose={() => setCalculationDetail(null)} />}
     {spellDetail && <SpellDetail spell={spellDetail} onClose={() => setSpellDetail(null)} />}
     {skillDetail && <SkillDetail skill={skillDetail} onClose={() => setSkillDetail(null)} />}
-    {itemDetail && <Modal title={itemDetail.name} onClose={() => setItemDetail(null)}><ImageFrame imageId={itemDetail.imageId} label={itemDetail.name} className="detail-image" /><dl className="details-grid"><Detail label="Категория" value={itemDetail.category} /><Detail label="Количество" value={itemDetail.quantity} /><Detail label="Урон" value={itemDetail.damage} /><Detail label="Тип урона" value={itemDetail.damageType} /><Detail label="Дальность" value={itemDetail.range} /><Detail label="Свойства" value={itemDetail.properties} /></dl><LongDetail label="Описание" value={itemDetail.description || itemDetail.note} /></Modal>}
+    {itemDetail && <Modal title={itemDetail.name} onClose={() => setItemDetail(null)}><DetailImage imageId={itemDetail.imageId} label={itemDetail.name} /><dl className="details-grid"><Detail label="Категория" value={itemDetail.category} /><Detail label="Количество" value={itemDetail.quantity} /><Detail label="Урон" value={itemDetail.damage} /><Detail label="Тип урона" value={itemDetail.damageType} /><Detail label="Дальность" value={itemDetail.range} /><Detail label="Свойства" value={itemDetail.properties} /></dl><LongDetail label="Описание" value={itemDetail.description || itemDetail.note} /></Modal>}
   </div>
 }
 
@@ -784,7 +799,7 @@ function Characteristics() {
   }
 
   return <div className="page-stack">
-    <p className="page-intro">Проверка подставляется из характеристики, а спасбросок основной характеристики с 4-го уровня включает бонус владения. Оба значения можно переопределить вручную. Бонус владения берётся из уровня, пока в параметрах боя не задано ручное значение. Нажмите на навык, чтобы добавить бонус владения один или два раза. Поле «Бонус» рядом служит отдельной пометкой и в расчёт не входит. В режиме редактирования можно добавить нестандартный навык к выбранной характеристике.</p>
+    <p className="page-intro">Нажимайте на навык, чтобы добавить бонус владения один или два раза. Поле «Бонус» рядом — отдельная пометка, она не участвует в расчёте.</p>
     <section className="characteristic-grid">
       {state.characteristics.map((characteristic) => {
         const selected = state.profile.mainCharacteristic === characteristic.name
@@ -911,7 +926,7 @@ function SpellDetail({ spell, onClose }: { spell: Spell; onClose: () => void }) 
   const damage = spell.damage || (!spell.elements.includes('Исцеление') ? spell.damageOrHealing : '')
   const healing = spell.healing || (spell.elements.includes('Исцеление') ? spell.damageOrHealing : '')
   return <Modal title={spell.name} onClose={onClose}>
-    <ImageFrame imageId={spell.imageId} label={spell.name} className="detail-image" />
+    <DetailImage imageId={spell.imageId} label={spell.name} />
     <FormattedText className="lead" text={spell.summary || 'Краткое описание не указано.'} />
     <dl className="details-grid">
       <Detail label="Подготовка" value={spellPreparationLabel(spell)} />
@@ -1119,7 +1134,7 @@ function SkillDetail({ skill, onClose }: { skill: Skill; onClose: () => void }) 
   }
   const showIndependentCosts = skill.costMode !== 'choose' && skill.costMode !== 'combined'
   return <Modal title={skill.name} onClose={onClose}>
-    <ImageFrame imageId={skill.imageId} label={skill.name} className="detail-image" />
+    <DetailImage imageId={skill.imageId} label={skill.name} />
     <FormattedText className="lead" text={skill.summary || 'Краткое описание не указано.'} />
     <LongDetail label="Полная механика" value={skill.mechanics} />
     {skill.characteristic && <LongDetail label="Основные характеристики" value={skill.characteristic} />}
@@ -1184,9 +1199,21 @@ function ItemEditor({ item, onClose }: { item: Item; onClose: () => void }) {
 
 function CharacterPage() {
   const state = useCharacterStore()
+  const changeRace = (race: string) => {
+    state.setProfile('race', race)
+    if (state.profile.raceSubtype && !raceSubtypes(race).includes(state.profile.raceSubtype)) state.setProfile('raceSubtype', '')
+  }
   const fields: Array<[string, string]> = [['race', 'Раса'], ['raceSubtype', 'Подвид'], ['background', 'Предыстория'], ['profession', 'Профессия'], ['alignment', 'Мировоззрение'], ['size', 'Размер'], ['flySpeed', 'Скорость полёта'], ['swimSpeed', 'Скорость плавания'], ['climbSpeed', 'Скорость лазания'], ['masteryMagic', 'Мастерство/Магия'], ['specializationMagic', 'Уровень специализации: магия'], ['specializationCombat', 'Уровень специализации: бой'], ['specializationCraft', 'Уровень специализации: ремесло'], ['magicProfile', 'Магический профиль'], ['age', 'Возраст'], ['height', 'Рост'], ['weight', 'Вес'], ['eyes', 'Глаза'], ['hair', 'Волосы'], ['skin', 'Кожа']]
   const combatFields: Array<[string, string]> = [['damageBonus', 'Бонус урона'], ['meleeRange', 'Дальность ближней атаки'], ['rangedRange', 'Дальность дальней атаки'], ['spellSaveDc', 'Сложность спасброска заклинаний']]
-  return <div className="page-stack"><section className="profile-card"><Avatar name={state.profile.name} imageId={state.profile.avatarId} className="profile-avatar" /><div><FieldValue label="Имя персонажа" value={state.profile.name} onChange={(value) => state.setProfile('name', value)} editable={state.editing} heading /><p className="quiet">Аватар сохраняется на этом устройстве вместе с листом.</p>{state.editing && <ImageInput value={state.profile.avatarId} onChange={(imageId) => state.setProfile('avatarId', imageId ?? '')} />}</div></section><section className="profile-grid"><FieldValue label="Основная характеристика" value={state.profile.mainCharacteristic ?? ''} onChange={(value) => state.setProfile('mainCharacteristic', value)} editable={state.editing} />{fields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</section><p className="quiet">Вики начисляет 1 очко прогрессии за каждый переход уровня. Распределение по Магии, Бою и Ремеслу записывается вручную.</p><section><div className="section-title"><div><p className="eyebrow">База для вкладки «Бой»</p><h2>Атака и магия</h2><p className="quiet">Бонус владения применяется только при владении оружием или заклинанием. Расчёт атаки заклинанием указан в его описании.</p></div></div><div className="profile-grid">{combatFields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</div></section><section className="collections"><EntryCollection title="Языки" collection="languages" /><EntryCollection title="Владения" collection="proficiencies" /><EntryCollection title="Магические элементы" collection="elements" /></section>{(state.editing || specialTraits.some(([key]) => state.profile[key]?.trim())) && <section><div className="section-title"><div><h2>Особенности и защита</h2><p className="quiet">Записи для справки; не рассчитываются автоматически.</p></div></div><div className="text-grid">{specialTraits.map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</div></section>}<section className="text-grid">{[['specialAbilities', 'Способности'], ['perspective', 'Перспектива'], ['traits', 'Черты'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['weaknesses', 'Слабости'], ['backstory', 'Предыстория персонажа'], ['characterNotes', 'Заметки']].map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</section></div>
+  const renderField = ([key, label]: [string, string]) => {
+    if (key === 'race') return <ChoiceField key={key} label={label} value={state.profile.race} options={races} onChange={changeRace} editable={state.editing} />
+    if (key === 'raceSubtype') return <ChoiceField key={key} label={label} value={state.profile.raceSubtype} options={raceSubtypes(state.profile.race)} onChange={(value) => state.setProfile('raceSubtype', value)} editable={state.editing} />
+    if (key === 'background') return <ChoiceField key={key} label={label} value={state.profile.background || ''} options={backgrounds} onChange={(value) => state.setProfile('background', value)} editable={state.editing} />
+    if (key === 'alignment') return <ChoiceField key={key} label={label} value={state.profile.alignment ?? ''} options={alignments} onChange={(value) => state.setProfile('alignment', value)} editable={state.editing} />
+    if (key === 'size') return <ChoiceField key={key} label={label} value={state.profile.size ?? ''} options={sizes} onChange={(value) => state.setProfile('size', value)} editable={state.editing} />
+    return <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />
+  }
+  return <div className="page-stack"><section className="profile-card"><Avatar name={state.profile.name} imageId={state.profile.avatarId} className="profile-avatar" /><div><FieldValue label="Имя персонажа" value={state.profile.name} onChange={(value) => state.setProfile('name', value)} editable={state.editing} heading />{state.editing && <ImageInput value={state.profile.avatarId} onChange={(imageId) => state.setProfile('avatarId', imageId ?? '')} />}</div></section><section className="profile-grid"><FieldValue label="Основная характеристика" value={state.profile.mainCharacteristic ?? ''} onChange={(value) => state.setProfile('mainCharacteristic', value)} editable={state.editing} />{fields.map(renderField)}</section><section><div className="section-title"><div><h2>Атака и магия</h2><p className="quiet">Бонус владения применяется только при владении оружием или заклинанием. Расчёт атаки заклинанием указан в его описании.</p></div></div><div className="profile-grid">{combatFields.map(([key, label]) => <FieldValue key={key} label={label} value={state.profile[key] ?? ''} onChange={(value) => state.setProfile(key, value)} editable={state.editing} />)}</div></section><section className="collections"><EntryCollection title="Языки" collection="languages" /><EntryCollection title="Владения" collection="proficiencies" /><EntryCollection title="Магические элементы" collection="elements" /></section>{(state.editing || specialTraits.some(([key]) => state.profile[key]?.trim())) && <section><div className="section-title"><div><h2>Особенности и защита</h2><p className="quiet">Записи для справки; не рассчитываются автоматически.</p></div></div><div className="text-grid">{specialTraits.map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</div></section>}<section className="text-grid">{[['traits', 'Черты'], ['ideals', 'Идеалы'], ['bonds', 'Привязанности'], ['weaknesses', 'Слабости'], ['backstory', 'Предыстория персонажа']].map(([key, label]) => <TextValue key={key} label={label} value={state.profile[key] ?? ''} editable={state.editing} onChange={(value) => state.setProfile(key, value)} />)}</section></div>
 }
 
 function EntryCollection({ title, collection }: { title: string; collection: 'languages' | 'proficiencies' | 'elements' }) {
@@ -1218,7 +1245,7 @@ function NotesPage() {
   })
   const tags = [...new Set(state.notes.flatMap((note) => note.tags))]
 
-  return <div className="page-stack"><section className="page-toolbar"><div><p className="eyebrow">Игровые заметки</p><h2>Заметки сессии</h2></div><button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={16} />Новая заметка</button></section><div className="filters note-search"><input aria-label="Поиск заметок" placeholder="Поиск по заголовку и тегам..." value={query} onChange={(event) => setQuery(event.target.value)} /></div>{tags.length > 0 && <div className="tag-filter"><button type="button" className={!tagFilter ? 'active' : ''} onClick={() => setTagFilter('')}>Все теги</button>{tags.map((tag) => <button type="button" key={tag} className={tagFilter === tag ? 'active' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div>}{notice && <p className="notice" role="status">{notice}</p>}{notes.length ? <section className="notes-grid">{notes.map((note) => <Card key={note.id} className="note-card">{note.imageId && <ImageFrame imageId={note.imageId} label={note.title} className="note-image" />}<button className="note-open" type="button" onClick={() => setExpanded(note)}><p className="eyebrow">{new Date(note.updatedAt).toLocaleDateString('ru-RU')}</p><h3>{note.title || 'Без названия'}</h3><FormattedText className="note-preview" text={note.body || 'Пустая заметка'} /></button><div className="note-tags">{note.tags.map((tag) => <button type="button" key={tag} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div><CardActions itemName={note.title || 'заметка'} onEdit={() => setEditing(note)} onDuplicate={() => { const copy: Note = { ...note, id: newId(), title: `${note.title || 'Заметка'} — копия`, imageId: note.imageId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; state.upsertNote(copy); setNotice(`Создана копия заметки «${note.title || 'Без названия'}».`) }} onDelete={() => { if (window.confirm(`Удалить заметку «${note.title || 'Без названия'}»?`)) { state.deleteNote(note.id); setNotice('Заметка удалена.') } }} /></Card>)}</section> : <EmptyState title="Заметок не найдено" text={query || tagFilter ? 'Измените поисковый запрос или выбранный тег.' : 'Создайте первую заметку для событий, NPC и планов сессии.'} />}{editing && <NoteEditor note={editing === 'new' ? blankNote() : editing} onClose={() => setEditing(null)} />}{expanded && <Modal title={expanded.title || 'Заметка'} onClose={() => setExpanded(null)}>{expanded.imageId && <ImageFrame imageId={expanded.imageId} label={expanded.title} className="detail-image" />}<div className="note-tags">{expanded.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><FormattedText className="note-full" text={expanded.body || 'Пустая заметка'} /><button className="button ghost" type="button" onClick={() => { setEditing(expanded); setExpanded(null) }}><Pencil size={16} />Редактировать</button></Modal>}</div>
+  return <div className="page-stack"><section className="page-toolbar"><div><p className="eyebrow">Игровые заметки</p><h2>Заметки сессии</h2></div><button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={16} />Новая заметка</button></section><div className="filters note-search"><input aria-label="Поиск заметок" placeholder="Поиск по заголовку и тегам..." value={query} onChange={(event) => setQuery(event.target.value)} /></div>{tags.length > 0 && <div className="tag-filter"><button type="button" className={!tagFilter ? 'active' : ''} onClick={() => setTagFilter('')}>Все теги</button>{tags.map((tag) => <button type="button" key={tag} className={tagFilter === tag ? 'active' : ''} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div>}{notice && <p className="notice" role="status">{notice}</p>}{notes.length ? <section className="notes-grid">{notes.map((note) => <Card key={note.id} className="note-card">{note.imageId && <ImageFrame imageId={note.imageId} label={note.title} className="note-image" />}<button className="note-open" type="button" onClick={() => setExpanded(note)}><p className="eyebrow">{new Date(note.updatedAt).toLocaleDateString('ru-RU')}</p><h3>{note.title || 'Без названия'}</h3><FormattedText className="note-preview" text={note.body || 'Пустая заметка'} /></button><div className="note-tags">{note.tags.map((tag) => <button type="button" key={tag} onClick={() => setTagFilter(tag)}>{tag}</button>)}</div><CardActions itemName={note.title || 'заметка'} onEdit={() => setEditing(note)} onDuplicate={() => { const copy: Note = { ...note, id: newId(), title: `${note.title || 'Заметка'} — копия`, imageId: note.imageId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; state.upsertNote(copy); setNotice(`Создана копия заметки «${note.title || 'Без названия'}».`) }} onDelete={() => { if (window.confirm(`Удалить заметку «${note.title || 'Без названия'}»?`)) { state.deleteNote(note.id); setNotice('Заметка удалена.') } }} /></Card>)}</section> : <EmptyState title="Заметок не найдено" text={query || tagFilter ? 'Измените поисковый запрос или выбранный тег.' : 'Создайте первую заметку для событий, NPC и планов сессии.'} />}{editing && <NoteEditor note={editing === 'new' ? blankNote() : editing} onClose={() => setEditing(null)} />}{expanded && <Modal title={expanded.title || 'Заметка'} onClose={() => setExpanded(null)}>{expanded.imageId && <DetailImage imageId={expanded.imageId} label={expanded.title} />}<div className="note-tags">{expanded.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><FormattedText className="note-full" text={expanded.body || 'Пустая заметка'} /><button className="button ghost" type="button" onClick={() => { setEditing(expanded); setExpanded(null) }}><Pencil size={16} />Редактировать</button></Modal>}</div>
 }
 
 function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {

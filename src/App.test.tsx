@@ -81,17 +81,13 @@ describe('игровые представления листа', () => {
     expect(await screen.findByRole('button', { name: /Восприятие: \+7/ })).toBeInTheDocument()
   })
 
-  it('показывает инициативу в боевых параметрах и отдельные заметки персонажа', async () => {
+  it('показывает инициативу в боевых параметрах', async () => {
     const initial = createInitialCharacter()
     initial.profile.initiative = '+2'
-    initial.profile.characterNotes = 'Личная заметка'
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
     expect(await screen.findByText('Инициатива')).toBeInTheDocument()
     expect(screen.getByText('+2')).toBeInTheDocument()
-    navigate('Персонаж')
-    expect((await screen.findAllByText('Заметки')).length).toBeGreaterThan(0)
-    expect(screen.getByText('Личная заметка')).toBeInTheDocument()
   })
 
   it('не подставляет неподтверждённые правила отдыха и не меняет ресурсы автоматически', async () => {
@@ -101,40 +97,93 @@ describe('игровые представления листа', () => {
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
 
-    expect(await screen.findByText('Учитывайте восстановление костей хитов по правилам вашего персонажа. Запас меняется вручную.')).toBeInTheDocument()
+    expect(screen.queryByText('Учитывайте восстановление костей хитов по правилам вашего персонажа. Запас меняется вручную.')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Правила отдыха' })).not.toBeInTheDocument()
-    expect(screen.getByText('«Божественный резерв» восстанавливает этот запас после длительного отдыха; счётчик меняется вручную.')).toBeInTheDocument()
     expect(useCharacterStore.getState().resources.hitDice).toEqual({ current: 2, max: 4 })
     expect(useCharacterStore.getState().resources.patronMana).toEqual({ current: 1, max: 2 })
+    navigate('Бой')
+    expect(await screen.findByText('Учитывайте восстановление костей хитов по правилам вашего персонажа. Запас меняется вручную.')).toBeInTheDocument()
   })
 
-  it('показывает поля исходного листа, включая отдельно заполняемые способности', async () => {
+  it('показывает поля анкеты без дублирования умений в разделе персонажа', async () => {
     const initial = createInitialCharacter()
     initial.profile.size = 'Средний'
     initial.profile.background = 'Чужеземец'
+    initial.profile.specialAbilities = 'Ночное зрение'
+    initial.profile.perspective = 'Размашистый удар'
+    initial.profile.characterNotes = 'Личная заметка'
     useCharacterStore.setState({ ...initial, editing: false })
     render(<App />)
     navigate('Персонаж')
     expect((await screen.findByText('Основная характеристика')).parentElement).toHaveTextContent(initial.profile.mainCharacteristic)
     expect(screen.getByText('Размер').parentElement).toHaveTextContent('Средний')
     expect(screen.getByText('Предыстория').parentElement).toHaveTextContent('Чужеземец')
-    expect(screen.getByRole('group', { name: 'Способности' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Способности' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Перспектива' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Заметки' })).not.toBeInTheDocument()
     expect(screen.queryByText('Класс')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Основная характеристика' }), { target: { value: 'Сила' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Способности' }), { target: { value: 'Ночное зрение' } })
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Редактировать' })))
+    act(() => fireEvent.change(screen.getByRole('textbox', { name: 'Основная характеристика' }), { target: { value: 'Сила' } }))
     expect(useCharacterStore.getState().profile.mainCharacteristic).toBe('Сила')
     expect(useCharacterStore.getState().profile.specialAbilities).toBe('Ночное зрение')
+    expect(useCharacterStore.getState().profile.perspective).toBe('Размашистый удар')
+    expect(useCharacterStore.getState().profile.characterNotes).toBe('Личная заметка')
   })
 
-  it('позволяет отдельно заполнить перспективу персонажа из листа', async () => {
+  it('даёт выбрать расу, подвид, предысторию, мировоззрение и размер из списков', async () => {
     const initial = createInitialCharacter()
+    initial.profile.race = 'Плазмоиды'
+    initial.profile.raceSubtype = 'Текучий плазмоид'
+    initial.profile.alignment = ''
+    initial.profile.size = ''
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Персонаж')
+    fireEvent.click(await screen.findByRole('button', { name: 'Редактировать' }))
+
+    const race = screen.getByRole('combobox', { name: 'Раса' })
+    const subtype = screen.getByRole('combobox', { name: 'Подвид' })
+    const background = screen.getByRole('combobox', { name: 'Предыстория' })
+    const alignment = screen.getByRole('combobox', { name: 'Мировоззрение' })
+    const size = screen.getByRole('combobox', { name: 'Размер' })
+    expect(within(alignment).getAllByRole('option')).toHaveLength(10)
+    expect(within(size).getAllByRole('option')).toHaveLength(7)
+    expect(within(size).getByRole('option', { name: 'Крошечный (Tiny)' })).toBeInTheDocument()
+    expect(within(size).getByRole('option', { name: 'Громадный (Gargantuan)' })).toBeInTheDocument()
+    expect(within(subtype).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Не выбрано', 'Желатиновый плазмоид', 'Текучий плазмоид', 'Кислотный плазмоид', 'Энергетический плазмоид',
+    ])
+    fireEvent.change(race, { target: { value: 'Люди' } })
+    expect(useCharacterStore.getState().profile.raceSubtype).toBe('')
+    expect(within(subtype).queryByRole('option', { name: 'Кислотный плазмоид' })).not.toBeInTheDocument()
+    fireEvent.change(background, { target: { value: 'Чужеземец' } })
+    expect(useCharacterStore.getState().profile.background).toBe('Чужеземец')
+    fireEvent.change(alignment, { target: { value: 'Хаотичный Нейтральный' } })
+    expect(useCharacterStore.getState().profile.alignment).toBe('Хаотичный Нейтральный')
+    fireEvent.change(size, { target: { value: 'Громадный (Gargantuan)' } })
+    expect(useCharacterStore.getState().profile.size).toBe('Громадный (Gargantuan)')
+  })
+
+  it('не показывает перспективу в разделе персонажа', async () => {
+    const initial = createInitialCharacter()
+    initial.profile.perspective = 'Размашистый удар'
     useCharacterStore.setState({ ...initial, editing: true })
     render(<App />)
     navigate('Персонаж')
-    const perspective = await screen.findByRole('textbox', { name: 'Перспектива' })
-    fireEvent.change(perspective, { target: { value: 'Размашистый удар' } })
+    expect(await screen.findByText('Основная характеристика')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Перспектива' })).not.toBeInTheDocument()
     expect(useCharacterStore.getState().profile.perspective).toBe('Размашистый удар')
+  })
+
+  it('сохраняет нестандартный подвид импортированной расы вне справочника', async () => {
+    const initial = createInitialCharacter()
+    initial.profile.race = 'constructor'
+    initial.profile.raceSubtype = 'Свой подвид'
+    useCharacterStore.setState({ ...initial, editing: true })
+    render(<App />)
+    const subtype = await screen.findByRole('combobox', { name: 'Подвид' })
+    expect(subtype).toHaveValue('Свой подвид')
+    expect(within(subtype).getAllByRole('option')).toHaveLength(2)
   })
 
   it('показывает ману покровителя только по выбору и не стирает скрытый ресурс', async () => {
@@ -779,6 +828,21 @@ describe('игровые представления листа', () => {
     expect(screen.queryByRole('heading', { name: 'Список NPC' })).not.toBeInTheDocument()
     fireEvent.change(search, { target: { value: 'персонажи' } })
     expect(screen.getByRole('heading', { name: 'Список NPC' })).toBeInTheDocument()
+  })
+
+  it('оставляет миниатюру заметки и отдельную область для изображения в полном просмотре', async () => {
+    const initial = createInitialCharacter()
+    initial.notes = [{ id: 'image-note', title: 'Карта с изображением', body: 'Описание', tags: [], imageId: 'note-image', createdAt: '2026-11-14', updatedAt: '2026-11-14' }]
+    useCharacterStore.setState({ ...initial, editing: false })
+    render(<App />)
+    navigate('Заметки')
+
+    const title = await screen.findByRole('heading', { name: 'Карта с изображением' })
+    expect(title.closest('.note-card')?.querySelector('.note-image')).toBeInTheDocument()
+    fireEvent.click(title.closest('button')!)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Карта с изображением' })
+    expect(dialog.querySelector('.detail-image-frame')).toBeInTheDocument()
   })
 
   it('переключает три независимых персонажа без смешивания ресурсов и заклинаний', async () => {
