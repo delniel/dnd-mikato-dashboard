@@ -1,5 +1,5 @@
 import { Children, isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronDown, Copy, Dices, Download, FileArchive, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Swords, Trash2, Upload, UserRound, Users, WandSparkles, X, type LucideIcon } from 'lucide-react'
+import { ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronDown, Copy, Dices, Download, Ellipsis, FileArchive, Heart, Moon, Package, Pencil, Plus, Save, Settings, Shield, Sparkles, Star, Sun, Swords, Trash2, Upload, UserRound, Users, WandSparkles, X, type LucideIcon } from 'lucide-react'
 import { createJsonBackup, createLibraryBackup, materializeImportedCharacter, parseJsonBackup, restoreLibraryBackup, type BackupScope, type PreparedBackupImport } from './backup'
 import { cloneImage, loadImage, loadImages, loadLibrary, removeImages, saveImage, saveImages, saveLibrary, type ImageRecord } from './db'
 import { createBlankCharacter } from './data'
@@ -331,7 +331,7 @@ function App() {
         {libraryNotice && <p className="notice library-notice" role="status">{libraryNotice}</p>}
         {!hydrated ? <EmptyState title="Загрузка библиотеки…" text="Восстанавливаем локальные данные персонажей." /> : library.activeCharacterId ? <div key={library.activeCharacterId}>{content}</div> : <EmptyState title="Нет персонажей" text="Создайте первого персонажа, чтобы открыть лист." />}
       </section>
-      <nav className="bottom-nav"><Navigation active={page} onSelect={selectPage} compact /></nav>
+      <MobileNavigation active={page} onSelect={selectPage} />
       {autosaveStatus !== 'idle' && <p className={`autosave-status ${autosaveStatus}`} role={autosaveStatus === 'error' ? 'alert' : 'status'}>{autosaveStatus === 'saving' ? <><Save size={15} />Сохраняется…</> : autosaveStatus === 'saved' ? <><Save size={15} />Сохранено локально</> : <>Не удалось сохранить</>}</p>}
       <button className="dice-fab" type="button" aria-label="Открыть бросок кубиков" onClick={() => setDiceOpen(true)}><Dices /></button>
       {diceOpen && <DicePanel onClose={() => setDiceOpen(false)} />}
@@ -372,8 +372,41 @@ function Brand() {
   return <div className="brand"><span className="brand-mark"><Dices size={22} /></span><div><strong>DnD MGE</strong><small>Лист персонажа</small></div></div>
 }
 
-function Navigation({ active, onSelect, compact = false }: { active: Page; onSelect: (page: Page) => void; compact?: boolean }) {
-  return <div className={compact ? 'nav compact' : 'nav'}>{pages.map(({ page, icon: Icon }) => <button key={page} type="button" className={active === page ? 'nav-item active' : 'nav-item'} onClick={() => onSelect(page)} aria-current={active === page ? 'page' : undefined}><Icon size={compact ? 18 : 19} /><span>{page}</span></button>)}</div>
+const compactLabels: Partial<Record<Page, string>> = { 'Характеристики': 'Параметры', 'Заклинания и Способности': 'Магия' }
+const mobileMainPages = pages.filter(({ page }) => page === 'Обзор' || page === 'Бой' || page === 'Заклинания и Способности' || page === 'Инвентарь')
+const mobileMorePages = pages.filter((entry) => !mobileMainPages.includes(entry))
+
+function NavButton({ entry: { page, icon: Icon }, active, onSelect, compact = false }: { entry: typeof pages[number]; active: Page; onSelect: (page: Page) => void; compact?: boolean }) {
+  return <button type="button" className={active === page ? 'nav-item active' : 'nav-item'} onClick={() => onSelect(page)} aria-label={page} aria-current={active === page ? 'page' : undefined} title={page}><Icon size={19} aria-hidden="true" /><span>{compact ? compactLabels[page] ?? page : page}</span>{!compact && compactLabels[page] && <span className="rail-label" aria-hidden="true">{compactLabels[page]}</span>}</button>
+}
+
+function Navigation({ active, onSelect }: { active: Page; onSelect: (page: Page) => void }) {
+  return <nav className="nav" aria-label="Разделы листа">{pages.map((entry) => <NavButton key={entry.page} entry={entry} active={active} onSelect={onSelect} />)}</nav>
+}
+
+function MobileNavigation({ active, onSelect }: { active: Page; onSelect: (page: Page) => void }) {
+  const [open, setOpen] = useState(false)
+  const nav = useRef<HTMLElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const outside = (event: PointerEvent) => { if (!nav.current?.contains(event.target as Node)) setOpen(false) }
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('[aria-modal="true"]')) { setOpen(false); trigger.current?.focus() } }
+    const desktop = window.matchMedia('(min-width: 781px)')
+    const resize = () => { if (desktop.matches) setOpen(false) }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape)
+    desktop.addEventListener('change', resize)
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); desktop.removeEventListener('change', resize) }
+  }, [open])
+  const select = (page: Page) => { setOpen(false); onSelect(page) }
+  return <nav className="bottom-nav" aria-label="Разделы листа" ref={nav}>
+    <div className="nav compact">
+      {mobileMainPages.map((entry) => <NavButton key={entry.page} entry={entry} active={active} onSelect={select} compact />)}
+      <button type="button" ref={trigger} className={mobileMorePages.some(({ page }) => page === active) ? 'nav-item active' : 'nav-item'} aria-expanded={open} aria-controls="mobile-more-pages" onClick={() => setOpen(!open)}><Ellipsis size={19} aria-hidden="true" /><span>Ещё</span></button>
+    </div>
+    <div id="mobile-more-pages" className="mobile-more-pages" hidden={!open}>{mobileMorePages.map((entry) => <NavButton key={entry.page} entry={entry} active={active} onSelect={(page) => { select(page); trigger.current?.focus() }} />)}</div>
+  </nav>
 }
 
 function CharacterSwitcher({ library, busy, onSwitch, onManage, onCreate }: { library: CharacterLibrary; busy: boolean; onSwitch: (id: string) => Promise<void>; onManage: () => void; onCreate: () => Promise<void> }) {
